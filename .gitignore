@@ -147,3 +147,12 @@ vite.config.ts.timestamp-*
 
 # Turbo Repo
 .turbo
+
+# --- abestar-broadcast ---
+# Recorded evidence must be committed despite the `logs` pattern above.
+!fixtures/logs/
+.DS_Store
+test-results/
+playwright-report/
+supabase/.temp/
+supabase/.branches/

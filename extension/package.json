@@ -1,0 +1,11 @@
+{
+  "name": "@abestar/extension",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@abestar/shared": "*"
+  }
+}

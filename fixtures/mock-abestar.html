@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Mock Abestar GO!</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        margin: 16px;
+      }
+      .toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 16px;
+      }
+      .toolbar input {
+        flex: 1 1 240px;
+      }
+      .flex {
+        display: flex;
+      }
+      .flex-col {
+        flex-direction: column;
+      }
+      .gap-3 {
+        gap: 12px;
+      }
+      .gap-4 {
+        gap: 16px;
+      }
+      .flex-1 {
+        flex: 1;
+      }
+      .relative {
+        position: relative;
+      }
+      .absolute {
+        position: absolute;
+        top: 2px;
+        right: 4px;
+        width: 12px;
+        height: 12px;
+        color: #f59e0b;
+      }
+      .rounded-lg {
+        border-radius: 8px;
+        padding: 8px 16px;
+        background: #f8fafc;
+        box-shadow: 0 2px 6px rgb(0 0 0 / 0.15);
+      }
+      [data-testid='col-right'] {
+        max-height: 70vh;
+        overflow-y: auto;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="toolbar">
+      <button id="play">Play session 1</button>
+      <button id="add">Add pending</button>
+      <input id="text" placeholder="Translation text for the oldest pending card" />
+      <button id="resolve">Resolve oldest</button>
+      <button id="clear" title="Broom">🧹 Clear</button>
+    </div>
+    <main id="app"></main>
+    <script type="module" src="./mock-page.ts"></script>
+  </body>
+</html>

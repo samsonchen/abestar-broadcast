@@ -1,0 +1,11 @@
+{
+  "name": "@abestar/shared",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/types.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p ."
+  }
+}

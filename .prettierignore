@@ -1,0 +1,6 @@
+# Recorded evidence: never reformat.
+fixtures/logs/
+PLAN.md
+package-lock.json
+**/dist/
+coverage/
