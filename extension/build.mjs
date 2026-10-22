@@ -15,14 +15,10 @@ const local = process.argv.includes('--local');
 const zip = process.argv.includes('--zip');
 const pkg = JSON.parse(readFileSync(join(here, 'package.json'), 'utf8'));
 
-const config = local
-  ? {
-      supabaseUrl: 'http://127.0.0.1:54321',
-      // The Supabase CLI's fixed local key; not a secret.
-      publishableKey: 'sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH',
-      viewerUrl: 'http://localhost:5173/abestar-broadcast/',
-    }
-  : JSON.parse(readFileSync(join(here, '../shared/public-config.json'), 'utf8'));
+// local-config.json holds the Supabase CLI's fixed local key; not a secret.
+const config = JSON.parse(
+  readFileSync(join(here, `../shared/${local ? 'local' : 'public'}-config.json`), 'utf8'),
+);
 
 const abestarPages = ['https://*.abestar.com.tw/presentation/*'];
 const contentMatches = local ? [...abestarPages, 'http://localhost:5174/*'] : abestarPages;

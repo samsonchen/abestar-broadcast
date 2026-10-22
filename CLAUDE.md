@@ -20,7 +20,7 @@ Local Supabase needs a Docker runtime (Colima; Finch does not work with the Supa
 colima start
 supabase start -x studio,imgproxy,mailpit,edge-runtime,logflare,vector,supavisor,storage-api,postgres-meta
 npm run test:db     # pgTAP (supabase/tests) + API/Realtime integration (supabase/test)
-npm run test:e2e    # Playwright: built extension (local target) + mock page + local Supabase
+npm run test:e2e    # Playwright: extension (local build + mock page) and viewer (desktop + phone), local Supabase
 supabase db reset   # re-apply migrations + seed.sql (token `local-dev-token`, demo PIN 123456)
 supabase stop && colima stop
 ```
@@ -28,6 +28,11 @@ supabase stop && colima stop
 Extension: `npm run build -w @abestar/extension` (prod, from `shared/public-config.json`), `build:local` (local stack +
 mock on localhost:5174), `package` (prod zip in `extension/dist/`). Logic that touches `chrome.*` stays in thin
 `index.ts` files; `capture.ts` and `broadcaster.ts` take their dependencies as arguments and are unit-tested.
+
+Viewer: `npm run dev:local -w @abestar/viewer` serves it on http://localhost:5173/abestar-broadcast/ against the local
+stack (Vite mode `localstack`, config from `shared/local-config.json`); `npm run build -w @abestar/viewer` builds for
+GitHub Pages from `shared/public-config.json`. `transcript.ts`, `diff.ts` and `live.ts` are pure and unit-tested;
+`supabase.ts` is the only file that talks to Supabase (the `Backend` interface).
 
 The hosted project is set up only by the owner via `scripts/supabase-setup.sh` (see `docs/supabase-setup.md`).
 

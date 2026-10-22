@@ -3,10 +3,53 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="robots" content="noindex" />
     <title>Live Translation</title>
+    <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
-    <main id="app"></main>
+    <header class="bar">
+      <div class="heading">
+        <h1 id="title">Live translation</h1>
+        <span id="status" class="status" data-status="connecting">Connecting…</span>
+      </div>
+      <div class="tools">
+        <button id="smaller" type="button" aria-label="Smaller text">A−</button>
+        <button id="larger" type="button" aria-label="Larger text">A+</button>
+        <button id="theme" type="button" aria-label="Theme: automatic">◐</button>
+      </div>
+    </header>
+
+    <main>
+      <p id="empty" class="note">Waiting for the first line…</p>
+      <ol id="lines" class="lines" aria-live="polite"></ol>
+      <p id="idle" class="note" hidden>No new lines for 10 minutes.</p>
+      <p id="ended" class="ended" role="status" hidden>Broadcast ended</p>
+    </main>
+
+    <button id="new-lines" class="pill" type="button" hidden>↓ New lines</button>
+
+    <dialog id="pin-dialog" aria-labelledby="pin-title">
+      <form id="pin-form" method="dialog" novalidate>
+        <h2 id="pin-title">Enter the PIN</h2>
+        <p class="hint">The presenter shows a 6-digit PIN with the QR code.</p>
+        <input
+          id="pin"
+          name="pin"
+          inputmode="numeric"
+          autocomplete="one-time-code"
+          pattern="[0-9]{6}"
+          maxlength="6"
+          aria-label="PIN"
+          aria-describedby="pin-error"
+          required
+        />
+        <p id="pin-error" class="error" role="alert"></p>
+        <button id="join" type="submit" class="primary">Join</button>
+      </form>
+    </dialog>
+
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

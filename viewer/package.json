@@ -4,11 +4,14 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:local": "vite --mode localstack --port 5173 --strictPort",
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc -p ."
   },
   "dependencies": {
-    "@abestar/shared": "*"
+    "@abestar/shared": "*",
+    "@supabase/supabase-js": "^2.118.0",
+    "diff": "^9.0.0"
   }
 }

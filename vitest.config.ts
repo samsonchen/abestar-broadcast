@@ -17,6 +17,13 @@ export default defineConfig({
           environment: 'jsdom',
         },
       },
+      {
+        test: {
+          name: 'viewer',
+          include: ['viewer/test/**/*.test.ts'],
+          environment: 'jsdom',
+        },
+      },
       // Needs the local Supabase stack, so it only runs via `npm run test:db`.
       ...(process.env.SUPABASE_IT
         ? [
