@@ -3,5 +3,10 @@
   "compilerOptions": {
     "types": ["node"]
   },
-  "include": ["fixtures/**/*.ts", "supabase/test/**/*.ts", "vitest.config.ts"]
+  "include": [
+    "fixtures/**/*.ts",
+    "supabase/test/**/*.ts",
+    "vitest.config.ts",
+    "playwright.config.ts"
+  ]
 }

@@ -36,3 +36,10 @@ jobs:
       - run: supabase start -x studio,imgproxy,mailpit,edge-runtime,logflare,vector,supavisor,storage-api,postgres-meta
       - run: supabase db lint --local --level warning
       - run: npm run test:db
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: playwright-traces
+          path: test-results/

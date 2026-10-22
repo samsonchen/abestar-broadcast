@@ -1,4 +1,7 @@
 {
   "extends": "../tsconfig.base.json",
-  "include": ["src", "test"]
+  "compilerOptions": {
+    "types": ["chrome"]
+  },
+  "include": ["src", "test", "e2e"]
 }

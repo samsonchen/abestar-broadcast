@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Abestar Broadcast options</title>
+    <link rel="stylesheet" href="ui.css" />
+    <style>
+      body {
+        max-width: 560px;
+      }
+      fieldset {
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        margin: 0 0 16px;
+      }
+      .hint {
+        color: var(--muted);
+        font-size: 12px;
+        margin: -6px 0 10px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Abestar Broadcast options</h1>
+    <form id="form">
+      <fieldset>
+        <legend>Broadcast token</legend>
+        <label
+          >Token <input id="token" type="password" autocomplete="off" spellcheck="false"
+        /></label>
+        <p class="hint">From your password manager. It is stored only in this browser.</p>
+      </fieldset>
+
+      <fieldset>
+        <legend>Abestar pages</legend>
+        <label
+          >Extra page patterns, one per line
+          <textarea
+            id="extra-hosts"
+            rows="3"
+            placeholder="https://go.abestar.com.tw/presentation/*"
+          ></textarea>
+        </label>
+        <p class="hint">
+          Pages under <code>https://*.abestar.com.tw/presentation/*</code> work already. Add others
+          here if Abestar moves; Chrome will ask for permission.
+        </p>
+        <label
+          >Wait after the last change of a line (ms)
+          <input id="debounce" type="number" min="100" max="5000"
+        /></label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Advanced (leave empty)</legend>
+        <label>Supabase URL <input id="supabase-url" placeholder="" /></label>
+        <label>Publishable key <input id="publishable-key" placeholder="" /></label>
+        <label>Viewer URL <input id="viewer-url" placeholder="" /></label>
+      </fieldset>
+
+      <button type="submit" class="primary">Save</button>
+      <p id="saved" class="muted" role="status"></p>
+    </form>
+    <script src="options.js"></script>
+  </body>
+</html>

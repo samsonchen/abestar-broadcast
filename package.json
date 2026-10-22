@@ -17,10 +17,12 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "test:db": "supabase test db && SUPABASE_IT=1 vitest run --project supabase",
-    "mock": "vite fixtures --port 5174 --open /mock-abestar.html"
+    "mock": "vite fixtures --port 5174 --open /mock-abestar.html",
+    "test:e2e": "npm run build:local -w @abestar/extension && playwright test"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.64.1",
     "@supabase/supabase-js": "^2.118.0",
     "@types/node": "^24.0.0",
     "eslint": "^10.13.0",

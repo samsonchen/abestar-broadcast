@@ -72,7 +72,26 @@ Then commit `shared/public-config.json`.
 
 ## 4. Install the extension
 
-Filled in at M3: load the zip unpacked in Chrome, open the extension's Options, paste the broadcast token.
+The extension is not in the Chrome Web Store; it is loaded from a folder.
+
+1. Build the zip (it uses `shared/public-config.json`, so run the setup script first):
+   ```sh
+   npm install
+   npm run package -w @abestar/extension
+   ```
+   This writes `extension/dist/abestar-broadcast-<version>.zip`. Hand that file to other presenters.
+2. Unzip it into a folder you will keep (Chrome loads it from there on every start).
+3. In Chrome open `chrome://extensions`, turn on **Developer mode** (top right), click **Load unpacked**, and pick
+   the folder.
+4. Pin the extension (puzzle icon in the toolbar → pin **Abestar Broadcast**).
+5. Right-click the icon → **Options**, paste the broadcast token, **Save**.
+6. Reload any Abestar tab that was already open, so the extension can read it.
+
+To update: replace the folder's contents with the new zip, then click the reload icon on the extension's card in
+`chrome://extensions`.
+
+To broadcast: open the Abestar presentation page, click the extension icon, **Start broadcast**, and show the QR code
+(or **Fullscreen QR** on the projector). **End broadcast** when the talk is over.
 
 ## 5. Verify
 

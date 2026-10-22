@@ -1,0 +1,131 @@
+:root {
+  color-scheme: light dark;
+  --fg: #111827;
+  --muted: #6b7280;
+  --bg: #ffffff;
+  --border: #d1d5db;
+  --accent: #2563eb;
+  --danger: #dc2626;
+  --ok: #16a34a;
+  --warn: #d97706;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fg: #f3f4f6;
+    --muted: #9ca3af;
+    --bg: #111827;
+    --border: #374151;
+  }
+}
+body {
+  margin: 0;
+  padding: 16px;
+  font:
+    14px/1.4 system-ui,
+    sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+}
+body.popup {
+  width: 280px;
+}
+h1 {
+  font-size: 16px;
+  margin: 0 0 12px;
+}
+label {
+  display: block;
+  margin-bottom: 10px;
+}
+input:not([type='checkbox']),
+textarea {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 4px;
+  padding: 6px 8px;
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+label.check {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+button {
+  font: inherit;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  width: 100%;
+}
+button.danger {
+  border-color: var(--danger);
+  color: var(--danger);
+  width: 100%;
+  margin-top: 12px;
+}
+.row {
+  display: flex;
+  gap: 8px;
+}
+.row button {
+  flex: 1;
+}
+.status {
+  font-weight: 600;
+  margin: 0 0 8px;
+}
+.status.live {
+  color: var(--ok);
+}
+.status.warn {
+  color: var(--warn);
+}
+.status.bad {
+  color: var(--danger);
+}
+.pin-label {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.pin {
+  margin: 0 0 8px;
+  font-size: 36px;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  font-variant-numeric: tabular-nums;
+}
+canvas {
+  display: block;
+  margin: 0 auto 8px;
+  background: #fff;
+  border-radius: 6px;
+}
+.link {
+  word-break: break-all;
+  font-size: 12px;
+}
+.link a {
+  color: var(--accent);
+}
+.muted {
+  color: var(--muted);
+  font-size: 12px;
+}
+.error {
+  color: var(--danger);
+  min-height: 1em;
+}

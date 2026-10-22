@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Abestar Broadcast</title>
+    <link rel="stylesheet" href="ui.css" />
+  </head>
+  <body class="popup">
+    <h1>Abestar Broadcast</h1>
+
+    <section id="no-token" hidden>
+      <p>Paste your broadcast token in the options first.</p>
+      <button id="open-options">Open options</button>
+    </section>
+
+    <form id="idle" hidden>
+      <label>Title <input id="title" required maxlength="200" /></label>
+      <label class="check"
+        ><input id="include-existing" type="checkbox" /> Include text already on screen</label
+      >
+      <button id="start" type="submit" class="primary">Start broadcast</button>
+      <p id="start-error" class="error" role="alert"></p>
+    </form>
+
+    <section id="live" hidden>
+      <p id="status" class="status"></p>
+      <p class="pin-label">PIN</p>
+      <p id="pin" class="pin"></p>
+      <canvas id="qr" width="200" height="200"></canvas>
+      <p class="link"><a id="link" target="_blank"></a></p>
+      <div class="row">
+        <button id="copy">Copy link</button>
+        <button id="fullscreen">Fullscreen QR</button>
+      </div>
+      <p id="counts" class="muted"></p>
+      <p id="live-error" class="error" role="alert"></p>
+      <button id="end" class="danger">End broadcast</button>
+    </section>
+
+    <section id="ended" hidden>
+      <p id="ended-text" class="error"></p>
+      <button id="ok">OK</button>
+    </section>
+
+    <script src="popup.js"></script>
+  </body>
+</html>
