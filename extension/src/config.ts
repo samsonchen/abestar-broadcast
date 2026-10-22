@@ -11,7 +11,7 @@ declare const __ABESTAR_CONFIG__: ExtensionConfig;
 
 export const buildConfig: ExtensionConfig = __ABESTAR_CONFIG__;
 
-/** Keys in chrome.storage.local (set on the options page). */
+/** Keys in chrome.storage.local (set on the options page, except `lastTitle`). */
 export interface Settings {
   token?: string;
   /** Overrides for the baked-in values; empty means "use the build's". */
@@ -21,6 +21,8 @@ export interface Settings {
   /** Extra Abestar URL match patterns, e.g. `https://go.abestar.com.tw/presentation/*`. */
   extraHosts?: string[];
   debounceMs?: number;
+  /** The popup's title field, remembered across broadcasts. */
+  lastTitle?: string;
 }
 
 export const DEFAULT_DEBOUNCE_MS = 400;

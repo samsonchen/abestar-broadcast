@@ -87,7 +87,7 @@ async function start(force: boolean) {
     const reply = await send<StartReply>({
       kind: 'start',
       tabId,
-      title: $<HTMLInputElement>('title').value.trim(),
+      title: titleInput.value.trim(),
       includeExisting: $<HTMLInputElement>('include-existing').checked,
       force,
     });
@@ -102,7 +102,14 @@ async function start(force: boolean) {
   }
 }
 
-$<HTMLInputElement>('title').value = `Talk ${new Date().toLocaleDateString('sv-SE')}`;
+// The last title typed is remembered; with none, a dated default.
+const titleInput = $<HTMLInputElement>('title');
+void chrome.storage.local.get('lastTitle').then(({ lastTitle }: Settings) => {
+  titleInput.value = lastTitle?.trim() || `Talk ${new Date().toLocaleDateString('sv-SE')}`;
+});
+titleInput.addEventListener('input', () => {
+  void chrome.storage.local.set({ lastTitle: titleInput.value.trim() } satisfies Settings);
+});
 $('idle').addEventListener('submit', (e) => {
   e.preventDefault();
   void start(false);

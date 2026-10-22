@@ -5,7 +5,7 @@
 //   node build.mjs --zip        production build plus dist/abestar-broadcast-<version>.zip
 
 import { execFileSync } from 'node:child_process';
-import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as esbuild from 'esbuild';
@@ -23,6 +23,15 @@ const config = JSON.parse(
 const abestarPages = ['https://*.abestar.com.tw/presentation/*'];
 const contentMatches = local ? [...abestarPages, 'http://localhost:5174/*'] : abestarPages;
 
+// Optional custom icons: static/icons/icon-<size>.png. Without them Chrome shows a letter icon.
+const ICON_SIZES = [16, 32, 48, 128];
+const icons = Object.fromEntries(
+  ICON_SIZES.filter((size) => existsSync(join(here, `static/icons/icon-${size}.png`))).map(
+    (size) => [size, `icons/icon-${size}.png`],
+  ),
+);
+const hasIcons = Object.keys(icons).length > 0;
+
 const manifest = {
   manifest_version: 3,
   name: local ? 'Abestar Broadcast (local)' : 'Abestar Broadcast',
@@ -37,7 +46,12 @@ const manifest = {
   optional_host_permissions: ['https://*/*', 'http://*/*'],
   background: { service_worker: 'background.js', type: 'module' },
   content_scripts: [{ matches: contentMatches, js: ['content.js'], run_at: 'document_idle' }],
-  action: { default_popup: 'popup.html', default_title: 'Abestar Broadcast' },
+  ...(hasIcons ? { icons } : {}),
+  action: {
+    default_popup: 'popup.html',
+    default_title: 'Abestar Broadcast',
+    ...(hasIcons ? { default_icon: icons } : {}),
+  },
   options_ui: { page: 'options.html', open_in_tab: true },
 };
 

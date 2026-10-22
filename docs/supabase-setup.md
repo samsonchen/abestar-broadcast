@@ -90,6 +90,12 @@ The extension is not in the Chrome Web Store; it is loaded from a folder.
 To update: replace the folder's contents with the new zip, then click the reload icon on the extension's card in
 `chrome://extensions`.
 
+Custom icon (optional): put square PNGs named `icon-16.png`, `icon-32.png`, `icon-48.png` and `icon-128.png` in
+`extension/static/icons/`, then build the zip again. The build adds whichever sizes exist to the manifest; without
+any, Chrome shows a grey letter icon. Chrome's guidance: draw the 128 px icon at 96 × 96 inside 16 px of transparent
+padding, keep the 16 and 32 px versions simple enough to read in the toolbar, and remember the status badge covers
+the bottom-right corner.
+
 To broadcast: open the Abestar presentation page, click the extension icon, **Start broadcast**, and show the QR code
 (or **Fullscreen QR** on the projector). **End broadcast** when the talk is over.
 

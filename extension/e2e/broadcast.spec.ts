@@ -63,6 +63,8 @@ test('broadcasts the mock session, survives a reload, and ends', async ({
   const popup = await context.newPage();
   popup.on('dialog', (dialog) => void dialog.accept()); // "already live" (seeded demo) and "end?"
   await popup.goto(`chrome-extension://${extensionId}/popup.html?tab=${tabId}`);
+  await expect(popup.locator('#title')).toHaveValue(/^Talk \d{4}-\d{2}-\d{2}$/); // nothing typed yet
+  await popup.locator('#title').fill('Weekly sync');
   await popup.locator('#start').click();
   await expect(popup.locator('#status')).toHaveText('● Live');
   const pin = (await popup.locator('#pin').textContent())?.trim() ?? '';
@@ -103,4 +105,8 @@ test('broadcasts the mock session, survives a reload, and ends', async ({
   await expect(popup.locator('#idle')).toBeVisible();
   expect((await viewer(pin)).joined).toEqual({ error: 'invalid_pin' });
   expect(await audience.rows()).toEqual([]); // when it ends, it ends
+
+  // The next broadcast offers the last title typed.
+  await popup.reload();
+  await expect(popup.locator('#title')).toHaveValue('Weekly sync');
 });
