@@ -202,6 +202,9 @@ on demand; GitHub's Docker in CI).
    also sends `reset` on its first attach. The **background worker owns the epoch**: it increments the session's epoch
    (persisted in `chrome.storage.session`) on every `reset` and stamps it on outgoing segments, so a reload never
    overwrites earlier lines. Epochs need not be contiguous. Segment key is `(session, epoch, seq)`.
+   As built in M2: "previous cards are gone" is judged by element identity (React keeps card elements within one
+   column). A remounted column has all-new elements, so there it is a restart only if no finished card still shows
+   text already sent. An empty column always counts as a clear (old cards dropped in a long talk never empty it).
 7. **Start mid-talk:** when broadcast starts, existing cards are ignored by default (snapshot their text into
    `lastSent`); popup checkbox "include existing text" sends them as a backfill instead.
 8. Health: if `col-right` isn't found within 10 s, report `status: 'column-not-found'` → popup shows warning and the

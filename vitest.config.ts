@@ -10,6 +10,13 @@ export default defineConfig({
           environment: 'jsdom',
         },
       },
+      {
+        test: {
+          name: 'extension',
+          include: ['extension/test/**/*.test.ts'],
+          environment: 'jsdom',
+        },
+      },
       // Needs the local Supabase stack, so it only runs via `npm run test:db`.
       ...(process.env.SUPABASE_IT
         ? [
