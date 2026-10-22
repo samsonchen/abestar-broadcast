@@ -14,8 +14,17 @@ npm test            # Vitest, all projects
 npm run mock        # serves fixtures/mock-abestar.html on :5174 (add ?autoplay to replay session 1)
 ```
 
-Local Supabase (M1+) needs a Docker runtime: `colima start`, then `supabase start`; `colima stop` when done.
-Finch does not work with the Supabase CLI.
+Local Supabase needs a Docker runtime (Colima; Finch does not work with the Supabase CLI):
+
+```sh
+colima start
+supabase start -x studio,imgproxy,mailpit,edge-runtime,logflare,vector,supavisor,storage-api,postgres-meta
+npm run test:db     # pgTAP (supabase/tests) + API/Realtime integration (supabase/test)
+supabase db reset   # re-apply migrations + seed.sql (token `local-dev-token`, demo PIN 123456)
+supabase stop && colima stop
+```
+
+The hosted project is set up only by the owner via `scripts/supabase-setup.sh` (see `docs/supabase-setup.md`).
 
 ## Conventions
 

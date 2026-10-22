@@ -20,3 +20,19 @@ jobs:
       - run: npm run format:check
       - run: npm test
       - run: npm run build -w @abestar/viewer
+
+  db:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - uses: supabase/setup-cli@v3
+        with:
+          version: latest
+      - run: npm ci
+      - run: supabase start -x studio,imgproxy,mailpit,edge-runtime,logflare,vector,supavisor,storage-api,postgres-meta
+      - run: supabase db lint --local --level warning
+      - run: npm run test:db
