@@ -60,12 +60,7 @@ export class Broadcaster {
     return this.state;
   }
 
-  async start(opts: {
-    tabId: number;
-    title: string;
-    includeExisting: boolean;
-    force: boolean;
-  }): Promise<StartReply> {
+  async start(opts: { tabId: number; title: string; force: boolean }): Promise<StartReply> {
     await this.ready;
     if (this.state.broadcast) return { ok: false, error: 'busy' };
     const token = await this.deps.getToken();
@@ -93,7 +88,6 @@ export class Broadcaster {
     await this.update({ broadcast, status: 'live', sent: 0, lastError: null });
     await this.deps.tell(opts.tabId, {
       kind: 'start',
-      includeExisting: opts.includeExisting,
       debounceMs: await this.deps.getDebounceMs(),
     });
     return { ok: true };
@@ -122,7 +116,7 @@ export class Broadcaster {
     await this.ready;
     if (this.state.broadcast?.tabId !== tabId) return { capture: false };
     // A reload: whatever Abestar shows now is not new.
-    return { capture: true, includeExisting: false, debounceMs: await this.deps.getDebounceMs() };
+    return { capture: true, debounceMs: await this.deps.getDebounceMs() };
   }
 
   async capture(tabId: number, message: CaptureMessage): Promise<void> {

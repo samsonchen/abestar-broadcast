@@ -88,7 +88,6 @@ async function start(force: boolean) {
       kind: 'start',
       tabId,
       title: titleInput.value.trim(),
-      includeExisting: $<HTMLInputElement>('include-existing').checked,
       force,
     });
     if (reply.ok) return;

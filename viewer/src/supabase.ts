@@ -8,6 +8,9 @@ export interface Config {
   publishableKey: string;
 }
 
+/** Supabase's default `max_rows`, which the hosted project keeps; a shorter page is the last one. */
+const PAGE_ROWS = 1000;
+
 export function supabaseBackend(config: Config): Backend {
   // The anonymous session is kept in localStorage, so a reload rejoins as the same viewer.
   const sb = createClient(config.supabaseUrl, config.publishableKey, {
@@ -39,24 +42,42 @@ export function supabaseBackend(config: Config): Backend {
     return { ok: false, error: 'invalid-pin' };
   }
 
-  return {
-    join: (pin) => join(pin, false),
-
-    async fetch(sessionId, since) {
-      let segments = sb
+  /**
+   * PostgREST returns at most `max_rows` (1000) rows per request, and a long talk has more lines, so this pages by
+   * (epoch, seq) after the last row received. A row revised meanwhile is neither skipped nor repeated.
+   */
+  async function fetchSegments(sessionId: string, since: string | null): Promise<Segment[]> {
+    const all: Segment[] = [];
+    for (;;) {
+      let page = sb
         .from('segments')
         .select('*')
         .eq('session_id', sessionId)
         .order('epoch')
-        .order('seq');
-      if (since) segments = segments.gte('updated_at', since);
-      const [s, g] = await Promise.all([
+        .order('seq')
+        .limit(PAGE_ROWS);
+      if (since) page = page.gte('updated_at', since);
+      const last = all.at(-1);
+      if (last) {
+        page = page.or(`epoch.gt.${last.epoch},and(epoch.eq.${last.epoch},seq.gt.${last.seq})`);
+      }
+      const { data, error } = await page;
+      if (error) throw error;
+      all.push(...(data as Segment[]));
+      if (data.length < PAGE_ROWS) return all;
+    }
+  }
+
+  return {
+    join: (pin) => join(pin, false),
+
+    async fetch(sessionId, since) {
+      const [s, segments] = await Promise.all([
         sb.from('sessions').select('*').eq('id', sessionId).maybeSingle(),
-        segments,
+        fetchSegments(sessionId, since),
       ]);
       if (s.error) throw s.error;
-      if (g.error) throw g.error;
-      return { session: s.data as Session | null, segments: g.data as Segment[] };
+      return { session: s.data as Session | null, segments };
     },
 
     subscribe(sessionId, on) {

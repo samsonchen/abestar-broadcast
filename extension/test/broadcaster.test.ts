@@ -67,9 +67,7 @@ function worker(overrides: Partial<Deps> = {}) {
 }
 
 async function live(b = worker()) {
-  expect(
-    await b.start({ tabId: TAB, title: 'Talk', includeExisting: false, force: false }),
-  ).toEqual({
+  expect(await b.start({ tabId: TAB, title: 'Talk', force: false })).toEqual({
     ok: true,
   });
   return b;
@@ -94,7 +92,7 @@ describe('starting', () => {
     expect(fake.api.startSession).toHaveBeenCalledWith('token', 'Talk', false);
     expect(told.at(-1)).toEqual({
       tabId: TAB,
-      message: { kind: 'start', includeExisting: false, debounceMs: 400 },
+      message: { kind: 'start', debounceMs: 400 },
     });
     expect(await b.getState()).toMatchObject({
       status: 'live',
@@ -104,9 +102,7 @@ describe('starting', () => {
 
   it('needs a token', async () => {
     token = undefined;
-    expect(
-      await worker().start({ tabId: TAB, title: 'T', includeExisting: false, force: false }),
-    ).toEqual({
+    expect(await worker().start({ tabId: TAB, title: 'T', force: false })).toEqual({
       ok: false,
       error: 'no-token',
     });
@@ -116,7 +112,6 @@ describe('starting', () => {
     const reply = await worker().start({
       tabId: 99,
       title: 'T',
-      includeExisting: false,
       force: false,
     });
     expect(reply).toEqual({ ok: false, error: 'not-abestar' });
@@ -126,7 +121,7 @@ describe('starting', () => {
   it('reports a live session elsewhere, and starts with force', async () => {
     fake.api.startSession.mockResolvedValueOnce({ ok: false, error: 'session-live', message: '' });
     const b = worker();
-    const opts = { tabId: TAB, title: 'T', includeExisting: false };
+    const opts = { tabId: TAB, title: 'T' };
     expect(await b.start({ ...opts, force: false })).toEqual({ ok: false, error: 'session-live' });
     expect(await b.start({ ...opts, force: true })).toEqual({ ok: true });
     expect(fake.api.startSession).toHaveBeenLastCalledWith('token', 'T', true);
@@ -134,9 +129,7 @@ describe('starting', () => {
 
   it('allows only one broadcasting tab', async () => {
     const b = await live();
-    expect(
-      await b.start({ tabId: OTHER_TAB, title: 'T', includeExisting: false, force: false }),
-    ).toEqual({
+    expect(await b.start({ tabId: OTHER_TAB, title: 'T', force: false })).toEqual({
       ok: false,
       error: 'busy',
     });
@@ -250,7 +243,7 @@ describe('sending lines', () => {
 describe('page and session lifecycle', () => {
   it('tells only the broadcasting tab to resume after a reload', async () => {
     const b = await live();
-    expect(await b.hello(TAB)).toEqual({ capture: true, includeExisting: false, debounceMs: 400 });
+    expect(await b.hello(TAB)).toEqual({ capture: true, debounceMs: 400 });
     expect(await b.hello(OTHER_TAB)).toEqual({ capture: false });
   });
 

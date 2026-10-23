@@ -27,13 +27,13 @@ if (!window.__abestarBroadcast) {
     }
   };
 
-  const start = (includeExisting: boolean, debounceMs: number) => {
+  const start = (debounceMs: number) => {
     capture?.stop();
-    capture = startCapture(document, (m) => void send(m), { includeExisting, debounceMs });
+    capture = startCapture(document, (m) => void send(m), { debounceMs });
   };
 
   chrome.runtime.onMessage.addListener((message: ToContent, _sender, reply) => {
-    if (message.kind === 'start') start(message.includeExisting, message.debounceMs);
+    if (message.kind === 'start') start(message.debounceMs);
     if (message.kind === 'stop') {
       capture?.stop();
       capture = null;
@@ -44,7 +44,7 @@ if (!window.__abestarBroadcast) {
   // After a reload of the broadcasting tab, carry on in a new epoch.
   void (toBackground({ kind: 'hello' }) as Promise<HelloReply>)
     .then((r) => {
-      if (r.capture) start(r.includeExisting, r.debounceMs);
+      if (r.capture) start(r.debounceMs);
     })
     .catch(() => {});
 }

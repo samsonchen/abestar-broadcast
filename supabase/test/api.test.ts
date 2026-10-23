@@ -2,6 +2,7 @@
 // Run with `npm run test:db` after `supabase start`; it ends the seeded demo session.
 import { createClient, type RealtimeChannel, type SupabaseClient } from '@supabase/supabase-js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { supabaseBackend } from '../../viewer/src/supabase';
 
 const URL = process.env.SUPABASE_URL ?? 'http://127.0.0.1:54321';
 // The Supabase CLI's fixed local publishable key; not a secret.
@@ -52,6 +53,16 @@ async function watch(sb: SupabaseClient, sessionId: string) {
   await attached;
   return {
     events,
+    /** Waits for an event that matches, including one that already arrived. */
+    async find(match: (event: (typeof events)[number]) => boolean, timeoutMs = 5000) {
+      const start = Date.now();
+      for (;;) {
+        const found = events.find(match);
+        if (found) return found;
+        if (Date.now() - start > timeoutMs) throw new Error('no matching realtime event');
+        await new Promise((r) => setTimeout(r, 20));
+      }
+    },
     async next(timeoutMs = 3000) {
       const seen = events.length;
       const start = Date.now();
@@ -143,10 +154,38 @@ describe('API end to end (local stack)', () => {
     await Promise.all([joined.close(), outsider.close()]);
   });
 
+  it('gives a late joiner every line, past the 1000-row page limit', async () => {
+    const LINES = 1200;
+    for (let from = 100; from < 100 + LINES; from += 100) {
+      const writes = Array.from({ length: 100 }, (_, i) =>
+        upsert(extension, sessionId, from + i, `Line ${from + i}.`),
+      );
+      for (const { error } of await Promise.all(writes)) expect(error).toBeNull();
+    }
+
+    const late = supabaseBackend({ supabaseUrl: URL, publishableKey: KEY });
+    expect(await late.join(pin)).toMatchObject({ ok: true });
+    const { segments } = await late.fetch(sessionId, null);
+    // Seq 1 is the line written by the previous test.
+    expect(segments.map((s) => s.seq)).toEqual([
+      1,
+      ...Array.from({ length: LINES }, (_, i) => 100 + i),
+    ]);
+
+    // The gap re-fetch pages the same way.
+    // Lines written concurrently: start from the oldest, rounded down to the millisecond.
+    const oldest = Math.min(...segments.slice(1).map((s) => Date.parse(s.updated_at)));
+    const { segments: again } = await late.fetch(sessionId, new Date(oldest).toISOString());
+    expect(again.map((s) => s.seq)).toEqual(segments.slice(1).map((s) => s.seq));
+  }, 60_000);
+
   it('tells the viewer when the session ends, then refuses writes and reads', async () => {
     const joined = await watch(viewer, sessionId);
     await extension.rpc('end_session', { p_token: TOKEN, p_session_id: sessionId });
-    expect(await joined.next()).toMatchObject({ table: 'sessions', row: { status: 'ended' } });
+    // Realtime may still be delivering the previous test's lines.
+    expect(await joined.find((e) => e.table === 'sessions')).toMatchObject({
+      row: { status: 'ended' },
+    });
 
     const late = await upsert(extension, sessionId, 2, 'Late line.');
     expect(late.status).toBe(410);

@@ -223,20 +223,12 @@ describe('capture', () => {
       return mock;
     }
 
-    it('skips what is already on screen by default', async () => {
+    it('skips what is already on screen', async () => {
       const mock = await talkInProgress();
       capture_();
       mock.resolve(2, 'Arrives after start.');
       await advance(2000);
       expect(segments().map((m) => m.text)).toEqual(['Arrives after start.']);
-    });
-
-    it('backfills it when asked to include existing text', async () => {
-      const mock = await talkInProgress();
-      capture_({ includeExisting: true });
-      mock.resolve(2, 'Arrives after start.');
-      await advance(2000);
-      expect(segments().map((m) => m.text)).toEqual(['Already on screen.', 'Arrives after start.']);
     });
   });
 

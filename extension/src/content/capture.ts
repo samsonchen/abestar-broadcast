@@ -5,8 +5,6 @@ import type { CaptureMessage } from '@abestar/shared';
 import { CARD, CARD_TESTID, CARD_TEXT, PLACEHOLDER, TRANSLATION_COLUMN } from './selectors';
 
 export interface CaptureOptions {
-  /** Send the cards already on the page when capture starts; otherwise only later changes are sent. */
-  includeExisting?: boolean;
   /** Quiet time after a card's last mutation before it is read. */
   debounceMs?: number;
   /** How long to wait for the column before reporting `column-not-found`. */
@@ -30,7 +28,7 @@ const OBSERVE: MutationObserverInit = {
 export function startCapture(
   doc: Document,
   send: (message: CaptureMessage) => void,
-  { includeExisting = false, debounceMs = 400, columnTimeoutMs = 10_000 }: CaptureOptions = {},
+  { debounceMs = 400, columnTimeoutMs = 10_000 }: CaptureOptions = {},
 ): Capture {
   /** Text last sent per card number, for this epoch. */
   const lastSent = new Map<number, string>();
@@ -135,7 +133,7 @@ export function startCapture(
     send({ kind: 'status', status: 'ok' });
     const cards = cardsIn(found);
     track(cards, !firstAttach);
-    if (firstAttach && !includeExisting) {
+    if (firstAttach) {
       // Start mid-talk: what is already on screen counts as sent.
       for (const card of cards) {
         const seq = seqOf(card);
@@ -143,7 +141,7 @@ export function startCapture(
         if (seq !== null && text && !card.querySelector(PLACEHOLDER)) lastSent.set(seq, text);
       }
     } else {
-      // Backfill, or a React remount: unchanged texts are dropped by lastSent.
+      // A React remount: unchanged texts are dropped by lastSent.
       for (const card of cards) schedule(card);
     }
     firstAttach = false;

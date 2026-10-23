@@ -205,8 +205,8 @@ on demand; GitHub's Docker in CI).
    As built in M2: "previous cards are gone" is judged by element identity (React keeps card elements within one
    column). A remounted column has all-new elements, so there it is a restart only if no finished card still shows
    text already sent. An empty column always counts as a clear (old cards dropped in a long talk never empty it).
-7. **Start mid-talk:** when broadcast starts, existing cards are ignored by default (snapshot their text into
-   `lastSent`); popup checkbox "include existing text" sends them as a backfill instead.
+7. **Start mid-talk:** when broadcast starts, existing cards are ignored (snapshot their text into `lastSent`).
+   The "include existing text" backfill option was removed (owner decision 2026-10-23).
 8. Health: if `col-right` isn't found within 10 s, report `status: 'column-not-found'` → popup shows warning and the
    action badge turns red. All selectors come from `selectors.ts` so a DOM change is a one-file fix.
 
