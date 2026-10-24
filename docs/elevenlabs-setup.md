@@ -31,7 +31,7 @@ Sources: [pricing](https://elevenlabs.io/pricing), [API pricing](https://elevenl
 
 1. Sign in at [elevenlabs.io](https://elevenlabs.io), open **Developers → API Keys**, **Create API key**.
 2. Name: `abestar-broadcast-supabase`.
-3. Keep **Restrict key** on (the default). Give it access to **Text to Speech**, and **User** (no access to
+3. Keep **Restrict key** on (the default). Give it access to **Text to Speech**, and **User: Read** (`user_read`; no access to
    anything else). **User** lets the extension popup show the remaining credits; without it, read-aloud still
    works and the popup says "ElevenLabs credits unavailable". If the test in step 4 returns `missing_permissions`, add
    the permission the error names (usually **Voices: Read**) and nothing else.
