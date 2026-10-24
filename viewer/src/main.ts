@@ -1,6 +1,6 @@
 // Viewer entry: PIN from the URL or the dialog, join, then follow the broadcast (PLAN.md §5).
 import type { Session } from '@abestar/shared';
-import { setUpPreferences, wakeLock } from './device';
+import { onTap, setUpPreferences, wakeLock } from './device';
 import { type JoinResult, LiveSession } from './live';
 import { webAudioPlayer } from './player';
 import { supabaseBackend } from './supabase';
@@ -39,7 +39,7 @@ function debugLog(): (line: string) => void {
   const lines: string[] = [];
   const log = (line: string) => {
     lines.push(`${new Date().toLocaleTimeString('en-GB')} ${line}`);
-    box.textContent = lines.slice(-8).join('\n');
+    box.textContent = lines.slice(-14).join('\n');
   };
   document.addEventListener('visibilitychange', () => log(`page ${document.visibilityState}`));
   log(navigator.userAgent.replace(/^Mozilla\/5\.0 /, ''));
@@ -95,9 +95,24 @@ function follow(session: Session) {
     session: offerTts,
   });
   const tts = new Tts(
-    backend,
+    {
+      setTts: async (id, on) => {
+        const listening = await backend.setTts(id, on);
+        debug(`heartbeat ${on ? 'on' : 'off'}: ${listening ? 'ok' : 'refused'}`);
+        return listening;
+      },
+      listen: (id, onClip) =>
+        backend.listen(
+          id,
+          (clip) => {
+            debug(`clip ${clip.epoch}:${clip.seq} part ${clip.part + 1}/${clip.parts}`);
+            onClip(clip);
+          },
+          (status) => debug(`audio channel: ${status}`),
+        ),
+    },
     session.id,
-    webAudioPlayer((state) => debug(`audio: ${state}`)),
+    webAudioPlayer(debug),
     {
       active: (on) => {
         debug(`read-aloud ${on ? 'on' : 'off'}`);
@@ -113,8 +128,9 @@ function follow(session: Session) {
     },
   );
   ttsButton.addEventListener('click', () => tts.toggle());
-  // Capture phase, before the button's own click: a tap anywhere lets the phone play audio again.
-  document.addEventListener('pointerdown', () => tts.tap(), { capture: true, passive: true });
+  // A tap anywhere lets the phone play audio again. Phones count a tap as a user gesture only when the finger
+  // lifts (touchend; click elsewhere), not on pointerdown. Capture phase: before the button's own click.
+  onTap(() => tts.tap());
   window.addEventListener('pagehide', () => tts.disable());
   offerTts(session);
 

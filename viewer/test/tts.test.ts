@@ -21,15 +21,14 @@ const clip = (seq: number, part = 0, parts = 1, epoch = 0): TtsClip => ({
 function fakePlayer() {
   const played: string[] = [];
   const pending: (() => void)[] = [];
-  const player: Player & { unlocked: number; stopped: number; running: boolean } = {
+  const player: Player & { unlocked: number; fresh: number; stopped: number } = {
     unlocked: 0,
+    fresh: 0,
     stopped: 0,
-    running: true,
-    unlock() {
+    unlock(fresh) {
       player.unlocked++;
-      player.running = true;
+      if (fresh) player.fresh++;
     },
-    resume: async () => player.running,
     play(c) {
       played.push(c.audio);
       return new Promise<void>((resolve) => pending.push(resolve));
@@ -218,23 +217,22 @@ describe('Tts', () => {
     server.send(clip(1)); // its playback never finishes: the phone slept mid-clip
     expect(fake.played).toEqual(['0:1:0']);
     tts.wake();
-    await vi.advanceTimersByTimeAsync(0);
     expect(server.backend.listen).toHaveBeenCalledTimes(2);
     expect(fake.player.stopped).toBe(1);
-    expect(needsTap).toEqual([false]);
     server.send(clip(2));
     expect(fake.played).toEqual(['0:1:0', '0:2:0']);
   });
 
-  it('asks for a tap when the phone will not play audio again without one', async () => {
+  it('after waking up, asks for a tap and restarts audio from scratch on it', () => {
     tts.enable();
-    fake.player.running = false;
     tts.wake();
-    await vi.advanceTimersByTimeAsync(0);
     expect(needsTap).toEqual([true]);
     tts.tap();
-    expect(fake.player.unlocked).toBe(2);
+    expect(fake.player.fresh).toBe(1);
     expect(needsTap).toEqual([true, false]);
+    tts.tap(); // later taps only unlock again
+    expect(fake.player.fresh).toBe(1);
+    expect(fake.player.unlocked).toBe(3);
   });
 
   it('ignores wake-ups and taps while off', async () => {

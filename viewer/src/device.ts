@@ -59,6 +59,16 @@ export function setUpPreferences(): void {
 }
 
 /**
+ * Calls `fn` on every tap or click, early (capture phase). Phones treat a touch as a user gesture (needed to play
+ * audio or take the wake lock) only when the finger lifts: touchend, not pointerdown.
+ */
+export function onTap(fn: () => void): void {
+  for (const type of ['touchend', 'click'] as const) {
+    document.addEventListener(type, fn, { capture: true, passive: true });
+  }
+}
+
+/**
  * A 2-second blank 16×16 video, no audio (made with ffmpeg). Playing it muted and looped keeps some phones awake
  * where the Wake Lock API is missing (in-app browsers such as LINE's) or refused: the NoSleep.js technique.
  */
@@ -100,9 +110,11 @@ export function wakeLock(onStatus: (status: WakeStatus) => void = () => {}) {
     }
   };
 
-  const acquire = async () => {
+  /** `tapped`: called from a user gesture, which some browsers require for the wake lock. */
+  const acquire = async (tapped = false) => {
     if (!wanted || lock || requesting || document.visibilityState !== 'visible') return;
-    if (video && !video.paused) return;
+    const videoPlaying = Boolean(video && !video.paused);
+    if (videoPlaying && !tapped) return; // the video keeps going; a tap may still get the real lock
     if (videoOnly) return playVideo('?awake=video');
     if (!('wakeLock' in navigator)) return playVideo('no Wake Lock API');
     requesting = true;
@@ -112,19 +124,20 @@ export function wakeLock(onStatus: (status: WakeStatus) => void = () => {}) {
         lock = null;
         onStatus('released');
       });
-      onStatus('wake lock');
+      video?.pause();
+      onStatus(`wake lock${tapped ? ' (after a tap)' : ''}`);
     } catch (e) {
-      // e.g. Low Power Mode, low battery; the video may still work
-      await playVideo(
-        `wake lock refused: ${e instanceof Error ? `${e.name} ${e.message}` : String(e)}`,
-      );
+      // e.g. Low Power Mode, low battery, or no gesture yet; the video may still work
+      const why = `wake lock refused${tapped ? ' after a tap' : ''}: ${e instanceof Error ? `${e.name} ${e.message}` : String(e)}`;
+      if (videoPlaying) onStatus(`video; ${why}`);
+      else await playVideo(why);
     } finally {
       requesting = false;
     }
   };
 
   document.addEventListener('visibilitychange', () => void acquire());
-  document.addEventListener('pointerdown', () => void acquire(), { capture: true, passive: true });
+  onTap(() => void acquire(true));
   return {
     set(on: boolean) {
       wanted = on;

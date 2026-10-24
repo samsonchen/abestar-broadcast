@@ -7,14 +7,19 @@ export interface TtsBackend {
   /** Marks this viewer as listening (for 90 s) or not; false when not joined or the session is not live. */
   setTts(sessionId: string, on: boolean): Promise<boolean>;
   /** Joins the session's private audio channel; returns a function that leaves it. */
-  listen(sessionId: string, onClip: (clip: TtsClip) => void): () => void;
+  listen(
+    sessionId: string,
+    onClip: (clip: TtsClip) => void,
+    onStatus?: (status: string) => void,
+  ): () => void;
 }
 
 export interface Player {
-  /** Called from the tap that turns read-aloud on; phones only allow audio after a user gesture. */
-  unlock(): void;
-  /** Tries to restart audio without a tap (after the phone slept); false if it still needs one. */
-  resume(): Promise<boolean>;
+  /**
+   * Called from a tap (phones only allow audio after a user gesture). `fresh`: replace the audio context, which an
+   * iPhone that was locked can leave claiming to run while silent.
+   */
+  unlock(fresh?: boolean): void;
   play(clip: TtsClip): Promise<void>;
   stop(): void;
 }
@@ -32,6 +37,8 @@ export class Tts {
   private on = false;
   private leave: (() => void) | null = null;
   private heartbeat: ReturnType<typeof setInterval> | undefined;
+  /** Woken up since the last tap: the next tap restarts audio from scratch. */
+  private slept = false;
   private readonly queue: AudioQueue;
 
   constructor(
@@ -81,8 +88,8 @@ export class Tts {
 
   /**
    * The page is shown again, e.g. after the phone was locked. Sleep can leave a clip that never finishes, the
-   * audio suspended and the audio channel dead, and heartbeats were missed: start over as turning read-aloud off and
-   * on would, except that an iPhone may only play audio again after a tap (see `tap`).
+   * audio suspended (or claiming to run while silent) and the audio channel dead, and heartbeats were missed: start
+   * over as turning read-aloud off and on would. Audio itself needs a tap on an iPhone, so ask for one (see `tap`).
    */
   wake(): void {
     if (!this.on) return;
@@ -90,15 +97,15 @@ export class Tts {
     this.player.stop();
     this.join();
     this.beat();
-    void this.player.resume().then((running) => {
-      if (this.on) this.view.needsTap(!running);
-    });
+    this.slept = true;
+    this.view.needsTap(true);
   }
 
-  /** Any tap on the page: a gesture lets phones play audio again. */
+  /** Any tap on the page: a gesture lets phones play audio again; after a sleep, with a new audio context. */
   tap(): void {
     if (!this.on) return;
-    this.player.unlock();
+    this.player.unlock(this.slept);
+    this.slept = false;
     this.view.needsTap(false);
   }
 

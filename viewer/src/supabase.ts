@@ -113,12 +113,12 @@ export function supabaseBackend(config: Config): Backend & TtsBackend {
       return data === true;
     },
 
-    listen(sessionId, onClip) {
+    listen(sessionId, onClip, onStatus = () => {}) {
       // Private: the server lets only joined viewers of a live session receive it.
       const channel = sb
         .channel(`tts:${sessionId}`, { config: { private: true } })
         .on('broadcast', { event: 'audio' }, ({ payload }) => onClip(payload as TtsClip))
-        .subscribe();
+        .subscribe((status, err) => onStatus(err ? `${status} ${err.message}` : status));
       return () => void sb.removeChannel(channel);
     },
   };

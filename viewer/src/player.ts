@@ -9,7 +9,6 @@ function bytes(base64: string): ArrayBuffer {
   return out.buffer;
 }
 
-/** `onState` reports the AudioContext's state (running, suspended, interrupted on iPhones), for `?debug`. */
 /** AudioContext.resume() can stay pending on iPhones until a tap; wait at most `ms`. */
 function resumeWithin(ctx: AudioContext, ms: number): Promise<void> {
   return Promise.race([
@@ -18,18 +17,25 @@ function resumeWithin(ctx: AudioContext, ms: number): Promise<void> {
   ]);
 }
 
-export function webAudioPlayer(onState: (state: string) => void = () => {}): Player {
+/** `log` reports the AudioContext's state and each clip played, for `?debug`. */
+export function webAudioPlayer(log: (line: string) => void = () => {}): Player {
   let ctx: AudioContext | null = null;
   let source: AudioBufferSourceNode | null = null;
   let finish: (() => void) | null = null;
   let stops = 0; // a stop during decoding cancels that clip
 
   return {
-    unlock() {
+    unlock(fresh = false) {
+      if (fresh && ctx) {
+        // After an iPhone was locked its context can claim to be running yet play nothing.
+        void ctx.close().catch(() => {});
+        ctx = null;
+      }
       if (!ctx) {
         const created = new AudioContext();
-        created.addEventListener('statechange', () => onState(created.state));
+        created.addEventListener('statechange', () => log(`audio: ${created.state}`));
         ctx = created;
+        log(`audio: new context, ${created.state}`);
       }
       void ctx.resume();
       // A silent sample started in the gesture unlocks output on iOS.
@@ -37,12 +43,6 @@ export function webAudioPlayer(onState: (state: string) => void = () => {}): Pla
       silent.buffer = ctx.createBuffer(1, 1, 22050);
       silent.connect(ctx.destination);
       silent.start();
-    },
-
-    async resume() {
-      if (!ctx) return false;
-      if (ctx.state !== 'running') await resumeWithin(ctx, 1000);
-      return ctx.state === 'running';
     },
 
     async play(clip) {
@@ -55,6 +55,7 @@ export function webAudioPlayer(onState: (state: string) => void = () => {}): Pla
       try {
         buffer = await audio.decodeAudioData(bytes(clip.audio));
       } catch {
+        log(`clip ${clip.epoch}:${clip.seq} could not be decoded`);
         return; // a damaged clip is skipped
       }
       if (stops !== stopsBefore) return;
@@ -72,6 +73,7 @@ export function webAudioPlayer(onState: (state: string) => void = () => {}): Pla
         };
         source = node;
         node.start();
+        log(`playing ${clip.epoch}:${clip.seq} (audio ${audio.state})`);
       });
     },
 
