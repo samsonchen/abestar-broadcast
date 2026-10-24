@@ -9,7 +9,16 @@ function bytes(base64: string): ArrayBuffer {
   return out.buffer;
 }
 
-export function webAudioPlayer(): Player {
+/** `onState` reports the AudioContext's state (running, suspended, interrupted on iPhones), for `?debug`. */
+/** AudioContext.resume() can stay pending on iPhones until a tap; wait at most `ms`. */
+function resumeWithin(ctx: AudioContext, ms: number): Promise<void> {
+  return Promise.race([
+    ctx.resume().catch(() => {}),
+    new Promise<void>((resolve) => setTimeout(resolve, ms)),
+  ]);
+}
+
+export function webAudioPlayer(onState: (state: string) => void = () => {}): Player {
   let ctx: AudioContext | null = null;
   let source: AudioBufferSourceNode | null = null;
   let finish: (() => void) | null = null;
@@ -17,7 +26,11 @@ export function webAudioPlayer(): Player {
 
   return {
     unlock() {
-      ctx ??= new AudioContext();
+      if (!ctx) {
+        const created = new AudioContext();
+        created.addEventListener('statechange', () => onState(created.state));
+        ctx = created;
+      }
       void ctx.resume();
       // A silent sample started in the gesture unlocks output on iOS.
       const silent = ctx.createBufferSource();
@@ -26,11 +39,18 @@ export function webAudioPlayer(): Player {
       silent.start();
     },
 
+    async resume() {
+      if (!ctx) return false;
+      if (ctx.state !== 'running') await resumeWithin(ctx, 1000);
+      return ctx.state === 'running';
+    },
+
     async play(clip) {
       const audio = ctx;
       const stopsBefore = stops;
       if (!audio) return;
-      if (audio.state === 'suspended') await audio.resume().catch(() => {});
+      // 'suspended', or 'interrupted' on an iPhone that was locked
+      if (audio.state !== 'running') await resumeWithin(audio, 1000);
       let buffer: AudioBuffer;
       try {
         buffer = await audio.decodeAudioData(bytes(clip.audio));
@@ -43,7 +63,10 @@ export function webAudioPlayer(): Player {
         node.buffer = buffer;
         node.connect(audio.destination);
         finish = resolve;
+        // If the phone suspends audio mid-clip, `ended` may never come; do not hold the queue forever.
+        const guard = setTimeout(resolve, (buffer.duration + 2) * 1000);
         node.onended = () => {
+          clearTimeout(guard);
           if (source === node) source = null;
           resolve();
         };

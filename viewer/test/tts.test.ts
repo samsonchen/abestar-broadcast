@@ -21,12 +21,15 @@ const clip = (seq: number, part = 0, parts = 1, epoch = 0): TtsClip => ({
 function fakePlayer() {
   const played: string[] = [];
   const pending: (() => void)[] = [];
-  const player: Player & { unlocked: number; stopped: number } = {
+  const player: Player & { unlocked: number; stopped: number; running: boolean } = {
     unlocked: 0,
     stopped: 0,
+    running: true,
     unlock() {
       player.unlocked++;
+      player.running = true;
     },
+    resume: async () => player.running,
     play(c) {
       played.push(c.audio);
       return new Promise<void>((resolve) => pending.push(resolve));
@@ -148,14 +151,17 @@ function fakeBackend() {
 describe('Tts', () => {
   let server: ReturnType<typeof fakeBackend>;
   let active: boolean[];
+  let needsTap: boolean[];
   let tts: Tts;
 
   beforeEach(() => {
     server = fakeBackend();
     active = [];
+    needsTap = [];
     tts = new Tts(server.backend, SESSION.id, fake.player, {
       active: (on) => active.push(on),
       speaking: (line) => speaking.push(line),
+      needsTap: (on) => needsTap.push(on),
     });
   });
 
@@ -205,6 +211,39 @@ describe('Tts', () => {
     tts.enable();
     tts.disable(false);
     expect(server.backend.setTts).not.toHaveBeenCalledWith(SESSION.id, false);
+  });
+
+  it('starts over when the phone wakes up: rejoins the channel and drops a clip left hanging', async () => {
+    tts.enable();
+    server.send(clip(1)); // its playback never finishes: the phone slept mid-clip
+    expect(fake.played).toEqual(['0:1:0']);
+    tts.wake();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(server.backend.listen).toHaveBeenCalledTimes(2);
+    expect(fake.player.stopped).toBe(1);
+    expect(needsTap).toEqual([false]);
+    server.send(clip(2));
+    expect(fake.played).toEqual(['0:1:0', '0:2:0']);
+  });
+
+  it('asks for a tap when the phone will not play audio again without one', async () => {
+    tts.enable();
+    fake.player.running = false;
+    tts.wake();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(needsTap).toEqual([true]);
+    tts.tap();
+    expect(fake.player.unlocked).toBe(2);
+    expect(needsTap).toEqual([true, false]);
+  });
+
+  it('ignores wake-ups and taps while off', async () => {
+    tts.wake();
+    tts.tap();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(server.backend.listen).not.toHaveBeenCalled();
+    expect(fake.player.unlocked).toBe(0);
+    expect(needsTap).toEqual([]);
   });
 
   it('survives a failing heartbeat', async () => {

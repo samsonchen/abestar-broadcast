@@ -13,6 +13,8 @@ export interface TtsBackend {
 export interface Player {
   /** Called from the tap that turns read-aloud on; phones only allow audio after a user gesture. */
   unlock(): void;
+  /** Tries to restart audio without a tap (after the phone slept); false if it still needs one. */
+  resume(): Promise<boolean>;
   play(clip: TtsClip): Promise<void>;
   stop(): void;
 }
@@ -20,6 +22,8 @@ export interface Player {
 export interface TtsView {
   active(on: boolean): void;
   speaking(line: LineKey | null): void;
+  /** Read-aloud is on but the phone only plays audio again after a tap. */
+  needsTap(on: boolean): void;
 }
 
 export const HEARTBEAT_MS = 60_000;
@@ -55,9 +59,7 @@ export class Tts {
     if (this.on) return;
     this.on = true;
     this.player.unlock();
-    this.leave = this.backend.listen(this.sessionId, (clip) => {
-      if (this.on && clip.session_id === this.sessionId) this.queue.push(clip);
-    });
+    this.join();
     this.beat();
     this.heartbeat = setInterval(() => this.beat(), HEARTBEAT_MS);
     this.view.active(true);
@@ -72,13 +74,40 @@ export class Tts {
     this.leave = null;
     this.queue.clear();
     this.player.stop();
+    this.view.needsTap(false);
     this.view.active(false);
     if (tellServer) void this.backend.setTts(this.sessionId, false).catch(() => {});
   }
 
-  /** A phone that slept missed heartbeats; renew at once when it wakes up. */
+  /**
+   * The page is shown again, e.g. after the phone was locked. Sleep can leave a clip that never finishes, the
+   * audio suspended and the audio channel dead, and heartbeats were missed: start over as turning read-aloud off and
+   * on would, except that an iPhone may only play audio again after a tap (see `tap`).
+   */
   wake(): void {
-    if (this.on) this.beat();
+    if (!this.on) return;
+    this.queue.clear();
+    this.player.stop();
+    this.join();
+    this.beat();
+    void this.player.resume().then((running) => {
+      if (this.on) this.view.needsTap(!running);
+    });
+  }
+
+  /** Any tap on the page: a gesture lets phones play audio again. */
+  tap(): void {
+    if (!this.on) return;
+    this.player.unlock();
+    this.view.needsTap(false);
+  }
+
+  /** (Re)joins the audio channel. */
+  private join(): void {
+    this.leave?.();
+    this.leave = this.backend.listen(this.sessionId, (clip) => {
+      if (this.on && clip.session_id === this.sessionId) this.queue.push(clip);
+    });
   }
 
   private beat(): void {

@@ -7,6 +7,9 @@ import { supabaseBackend } from './supabase';
 import { Tts } from './tts';
 import { byId, domView } from './ui';
 
+const TTS_HINT = 'Read-aloud on. Keep this page open with the screen on; earphones recommended.';
+const TTS_HINT_TAP = 'Tap anywhere on the page to resume read-aloud.';
+
 const JOIN_ERRORS: Record<Exclude<JoinResult, { ok: true }>['error'], string> = {
   'invalid-pin': 'PIN not valid or broadcast has ended.',
   'too-many-attempts': 'Too many attempts, try again in a few minutes.',
@@ -19,9 +22,29 @@ const form = byId<HTMLFormElement>('pin-form');
 const input = byId<HTMLInputElement>('pin');
 const error = byId('pin-error');
 const joinButton = byId<HTMLButtonElement>('join');
-const screen = wakeLock();
+const debug = debugLog();
+const screen = wakeLock((status) => debug(`screen: ${status}`));
 
 setUpPreferences();
+
+/**
+ * `?debug` in the URL shows the last few events at the bottom of the page (screen lock, visibility, connection,
+ * read-aloud), for testing on phones without DevTools.
+ */
+function debugLog(): (line: string) => void {
+  if (!new URLSearchParams(location.search).has('debug')) return () => {};
+  const box = document.createElement('pre');
+  box.className = 'debug';
+  document.body.append(box);
+  const lines: string[] = [];
+  const log = (line: string) => {
+    lines.push(`${new Date().toLocaleTimeString('en-GB')} ${line}`);
+    box.textContent = lines.slice(-8).join('\n');
+  };
+  document.addEventListener('visibilitychange', () => log(`page ${document.visibilityState}`));
+  log(navigator.userAgent.replace(/^Mozilla\/5\.0 /, ''));
+  return log;
+}
 
 function setPinInUrl(pin: string | null) {
   const url = new URL(location.href);
@@ -65,20 +88,33 @@ function follow(session: Session) {
 
   const view = domView(session.target_lang, {
     status: (status) => {
+      debug(`status: ${status}`);
       screen.set(status !== 'ended');
       if (status === 'ended') offerTts({ ...session, status: 'ended' });
     },
     session: offerTts,
   });
-  const tts = new Tts(backend, session.id, webAudioPlayer(), {
-    active: (on) => {
-      ttsButton.setAttribute('aria-pressed', String(on));
-      ttsButton.setAttribute('aria-label', on ? 'Stop reading aloud' : 'Read aloud');
-      ttsHint.hidden = !on;
+  const tts = new Tts(
+    backend,
+    session.id,
+    webAudioPlayer((state) => debug(`audio: ${state}`)),
+    {
+      active: (on) => {
+        debug(`read-aloud ${on ? 'on' : 'off'}`);
+        ttsButton.setAttribute('aria-pressed', String(on));
+        ttsButton.setAttribute('aria-label', on ? 'Stop reading aloud' : 'Read aloud');
+        ttsHint.hidden = !on;
+      },
+      speaking: (line) => view.speaking(line),
+      needsTap: (on) => {
+        debug(`read-aloud needs a tap: ${on}`);
+        ttsHint.textContent = on ? TTS_HINT_TAP : TTS_HINT;
+      },
     },
-    speaking: (line) => view.speaking(line),
-  });
+  );
   ttsButton.addEventListener('click', () => tts.toggle());
+  // Capture phase, before the button's own click: a tap anywhere lets the phone play audio again.
+  document.addEventListener('pointerdown', () => tts.tap(), { capture: true, passive: true });
   window.addEventListener('pagehide', () => tts.disable());
   offerTts(session);
 

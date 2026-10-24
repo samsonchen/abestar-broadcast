@@ -309,3 +309,31 @@ dialog h2 {
 .primary:disabled {
   opacity: 0.6;
 }
+
+/* The blank video that keeps some phones awake (device.ts); playing but not seen. */
+.keep-awake {
+  position: fixed;
+  left: 0;
+  bottom: 0;
+  width: 1px;
+  height: 1px;
+  opacity: 0.01;
+  pointer-events: none;
+}
+/* ?debug */
+.debug {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2;
+  margin: 0;
+  padding: 4px 8px calc(4px + env(safe-area-inset-bottom));
+  font:
+    11px/1.3 ui-monospace,
+    monospace;
+  white-space: pre-wrap;
+  color: #fff;
+  background: rgb(0 0 0 / 0.75);
+  pointer-events: none;
+}

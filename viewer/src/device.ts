@@ -58,26 +58,80 @@ export function setUpPreferences(): void {
   apply();
 }
 
-/** Keeps the screen on while wanted; Chrome and Safari drop the lock when the page is hidden. */
-export function wakeLock() {
+/**
+ * A 2-second blank 16×16 video, no audio (made with ffmpeg). Playing it muted and looped keeps some phones awake
+ * where the Wake Lock API is missing (in-app browsers such as LINE's) or refused: the NoSleep.js technique.
+ */
+const BLANK_VIDEO =
+  'data:video/mp4;base64,AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAAAMqbW9vdgAAAGxtdmhkAAAAAAAAAAAAAAAAAAAD6AAAB9AAAQAAAQAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAlV0cmFrAAAAXHRraGQAAAADAAAAAAAAAAAAAAABAAAAAAAAB9AAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAABAAAAAQAAAAAAAkZWR0cwAAABxlbHN0AAAAAAAAAAEAAAfQAAAAAAABAAAAAAHNbWRpYQAAACBtZGhkAAAAAAAAAAAAAAAAAABAAAAAgABVxAAAAAAALWhkbHIAAAAAAAAAAHZpZGUAAAAAAAAAAAAAAABWaWRlb0hhbmRsZXIAAAABeG1pbmYAAAAUdm1oZAAAAAEAAAAAAAAAAAAAACRkaW5mAAAAHGRyZWYAAAAAAAAAAQAAAAx1cmwgAAAAAQAAAThzdGJsAAAAuHN0c2QAAAAAAAAAAQAAAKhhdmMxAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAABAAEABIAAAASAAAAAAAAAABFExhdmM2My4xLjEwMiBsaWJ4MjY0AAAAAAAAAAAAAAAAGP//AAAALmF2Y0MBQsAe/+EAFmdCwB7ZHsBEAAADAAQAAAMACDxYuSABAAVoy4PLIAAAABBwYXNwAAAAAQAAAAEAAAAUYnRydAAAAAAAAApAAAAAAAAAABhzdHRzAAAAAAAAAAEAAAACAABAAAAAABRzdHNzAAAAAAAAAAEAAAABAAAAHHN0c2MAAAAAAAAAAQAAAAEAAAACAAAAAQAAABxzdHN6AAAAAAAAAAAAAAACAAAChgAAAAoAAAAUc3RjbwAAAAAAAAABAAADWgAAAGF1ZHRhAAAAWW1ldGEAAAAAAAAAIWhkbHIAAAAAAAAAAG1kaXJhcHBsAAAAAAAAAAAAAAAALGlsc3QAAAAkqXRvbwAAABxkYXRhAAAAAQAAAABMYXZmNjMuMS4xMDIAAAAIZnJlZQAAAphtZGF0AAACcAYF//9s3EXpvebZSLeWLNgg2SPu73gyNjQgLSBjb3JlIDE2NSByMzIyMiBiMzU2MDVhIC0gSC4yNjQvTVBFRy00IEFWQyBjb2RlYyAtIENvcHlsZWZ0IDIwMDMtMjAyNSAtIGh0dHA6Ly93d3cudmlkZW9sYW4ub3JnL3gyNjQuaHRtbCAtIG9wdGlvbnM6IGNhYmFjPTAgcmVmPTMgZGVibG9jaz0xOjA6MCBhbmFseXNlPTB4MToweDExMSBtZT1oZXggc3VibWU9NyBwc3k9MSBwc3lfcmQ9MS4wMDowLjAwIG1peGVkX3JlZj0xIG1lX3JhbmdlPTE2IGNocm9tYV9tZT0xIHRyZWxsaXM9MSA4eDhkY3Q9MCBjcW09MCBkZWFkem9uZT0yMSwxMSBmYXN0X3Bza2lwPTEgY2hyb21hX3FwX29mZnNldD0tMiB0aHJlYWRzPTEgbG9va2FoZWFkX3RocmVhZHM9MSBzbGljZWRfdGhyZWFkcz0wIG5yPTAgZGVjaW1hdGU9MSBpbnRlcmxhY2VkPTAgYmx1cmF5X2NvbXBhdD0wIGNvbnN0cmFpbmVkX2ludHJhPTAgYmZyYW1lcz0wIHdlaWdodHA9MCBrZXlpbnQ9MjUwIGtleWludF9taW49MSBzY2VuZWN1dD00MCBpbnRyYV9yZWZyZXNoPTAgcmNfbG9va2FoZWFkPTQwIHJjPWNyZiBtYnRyZWU9MSBjcmY9MjMuMCBxY29tcD0wLjYwIHFwbWluPTAgcXBtYXg9NjkgcXBzdGVwPTQgaXBfcmF0aW89MS40MCBhcT0xOjEuMDAAgAAAAA5liIQFv///D0UAAU9/gAAAAAZBmjgK+oA=';
+
+/** How the screen is being kept on, for the `?debug` line. */
+export type WakeStatus = string;
+
+/**
+ * Keeps the screen on while wanted: the Screen Wake Lock API, else a playing blank video. Browsers drop both when the
+ * page is hidden, so they are taken again when it is shown, and on any tap (some only allow it after one).
+ * `?awake=video` uses the video only, to compare on a phone.
+ */
+export function wakeLock(onStatus: (status: WakeStatus) => void = () => {}) {
+  const videoOnly = new URLSearchParams(location.search).get('awake') === 'video';
   let wanted = false;
   let lock: WakeLockSentinel | null = null;
-  const acquire = async () => {
-    if (!wanted || lock || document.visibilityState !== 'visible' || !('wakeLock' in navigator))
-      return;
+  let requesting = false;
+  let video: HTMLVideoElement | null = null;
+
+  const playVideo = async (why: string) => {
+    if (!video) {
+      video = document.createElement('video');
+      video.muted = true;
+      video.loop = true;
+      video.playsInline = true;
+      video.setAttribute('playsinline', '');
+      video.setAttribute('aria-hidden', 'true');
+      video.className = 'keep-awake';
+      video.src = BLANK_VIDEO;
+      document.body.append(video);
+    }
     try {
-      lock = await navigator.wakeLock.request('screen');
-      lock.addEventListener('release', () => (lock = null));
-    } catch {
-      // unsupported or refused (low battery); the screen may sleep
+      await video.play();
+      onStatus(`video (${why})`);
+    } catch (e) {
+      onStatus(`off: ${why}; video refused (${e instanceof Error ? e.name : String(e)})`);
     }
   };
+
+  const acquire = async () => {
+    if (!wanted || lock || requesting || document.visibilityState !== 'visible') return;
+    if (video && !video.paused) return;
+    if (videoOnly) return playVideo('?awake=video');
+    if (!('wakeLock' in navigator)) return playVideo('no Wake Lock API');
+    requesting = true;
+    try {
+      lock = await navigator.wakeLock.request('screen');
+      lock.addEventListener('release', () => {
+        lock = null;
+        onStatus('released');
+      });
+      onStatus('wake lock');
+    } catch (e) {
+      // e.g. Low Power Mode, low battery; the video may still work
+      await playVideo(
+        `wake lock refused: ${e instanceof Error ? `${e.name} ${e.message}` : String(e)}`,
+      );
+    } finally {
+      requesting = false;
+    }
+  };
+
   document.addEventListener('visibilitychange', () => void acquire());
+  document.addEventListener('pointerdown', () => void acquire(), { capture: true, passive: true });
   return {
     set(on: boolean) {
       wanted = on;
-      if (on) void acquire();
-      else void lock?.release();
+      if (on) return void acquire();
+      void lock?.release();
+      video?.pause();
+      onStatus('off');
     },
   };
 }
