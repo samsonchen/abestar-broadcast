@@ -35,8 +35,9 @@ export type Status =
   | 'live'
   | 'reconnecting'
   | 'column-not-found'
-  | 'tab-closed'
   | 'ended-remotely'
+  | 'ended-tab-closed'
+  | 'ended-restart'
   | 'invalid-token';
 
 export interface Broadcast {

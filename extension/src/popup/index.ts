@@ -21,9 +21,18 @@ const STATUS_TEXT: Record<Status, [string, 'live' | 'warn' | 'bad']> = {
   live: ['● Live', 'live'],
   reconnecting: ['● Reconnecting…', 'warn'],
   'column-not-found': ['● Translation column not found on the page', 'bad'],
-  'tab-closed': ['● The Abestar tab was closed; reopen it to continue', 'bad'],
   'ended-remotely': ['', 'bad'],
+  'ended-tab-closed': ['', 'bad'],
+  'ended-restart': ['', 'bad'],
   'invalid-token': ['● Invalid token; paste it again in the options', 'bad'],
+};
+
+const ENDED_TEXT: Partial<Record<Status, string>> = {
+  'ended-remotely':
+    'This broadcast was ended elsewhere (a new broadcast was started, or it was idle for 2 hours).',
+  'ended-tab-closed': 'The broadcast ended because the Abestar tab was closed.',
+  'ended-restart':
+    'The last broadcast was ended because Chrome restarted (or the extension was reloaded or updated).',
 };
 
 const START_ERRORS: Record<StartError, string> = {
@@ -75,9 +84,9 @@ const syncVoices = () => {
 
 async function render(state: BroadcastState) {
   const settings = (await chrome.storage.local.get()) as Settings;
-  if (state.status === 'ended-remotely') {
-    $('ended-text').textContent =
-      'This broadcast was ended elsewhere (a new broadcast was started, or it was idle for 2 hours).';
+  const ended = ENDED_TEXT[state.status];
+  if (ended) {
+    $('ended-text').textContent = ended;
     return show('ended');
   }
   if (!state.broadcast) {

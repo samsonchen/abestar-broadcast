@@ -12,8 +12,9 @@ const BADGE: Record<Status, { text: string; color: string }> = {
   live: { text: 'ON', color: '#16a34a' },
   reconnecting: { text: '…', color: '#d97706' },
   'column-not-found': { text: '!', color: '#dc2626' },
-  'tab-closed': { text: '!', color: '#dc2626' },
   'ended-remotely': { text: '', color: '#000000' },
+  'ended-tab-closed': { text: '', color: '#000000' },
+  'ended-restart': { text: '', color: '#000000' },
   'invalid-token': { text: '!', color: '#dc2626' },
 };
 
@@ -36,6 +37,13 @@ const broadcaster = new Broadcaster({
         queue?: QueueItem[];
       }>,
     save: (state, queue) => chrome.storage.session.set({ state, queue }),
+  },
+  liveSession: {
+    get: async () => (await settings()).liveSessionId,
+    set: (id) =>
+      id
+        ? chrome.storage.local.set({ liveSessionId: id } satisfies Settings)
+        : chrome.storage.local.remove('liveSessionId'),
   },
   getToken: async () => (await settings()).token,
   getDebounceMs: async () => (await settings()).debounceMs ?? DEFAULT_DEBOUNCE_MS,
@@ -85,12 +93,17 @@ chrome.runtime.onMessage.addListener((message: ToBackground, sender, reply) => {
   return true; // reply asynchronously
 });
 
+// Closing the Abestar tab ends the broadcast. Quitting Chrome may not leave time for that; the session left behind
+// is ended when the worker next starts (Chrome restarted), as is one whose end could not reach the server.
 chrome.tabs.onRemoved.addListener((tabId) => void broadcaster.tabClosed(tabId));
+void broadcaster.endLeftover();
 
-// Safety net for retries if Chrome stopped the worker while lines were queued.
+// Safety net for retries if Chrome stopped the worker while lines were queued, or an end did not reach the server.
 chrome.alarms.create('flush', { periodInMinutes: 0.5 });
 chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === 'flush') void broadcaster.flush();
+  if (alarm.name !== 'flush') return;
+  void broadcaster.flush();
+  void broadcaster.endLeftover();
 });
 
 // Abestar hosts added on the options page get the content script too.

@@ -496,7 +496,7 @@ the token, the real-page smoke test with a microphone.
 | PIN guessing | 6 digits, ≤ 5 failed attempts / user / 10 min, plus Supabase's per-IP anonymous sign-in limit |
 | Broadcast token leaks | Only its hash is stored; `supabase-setup.sh --new-token` replaces it |
 | Free project paused between events | "Before an event" checklist: check status and restore the day before |
-| Forgotten "End broadcast" | Auto-end after 2 h idle; new broadcast force-ends the old one after confirmation |
+| Forgotten "End broadcast" | Auto-end after 2 h idle; new broadcast force-ends the old one after confirmation; closing the Abestar tab ends it; after a Chrome restart the extension ends the session it lost track of (0.2.1) |
 | Terms of use for rebroadcasting Abestar output | Owner to confirm with Abestar before public use (not a code task) |
 
 ---

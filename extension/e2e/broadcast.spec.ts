@@ -2,6 +2,8 @@
 // local Supabase; a viewer reads the rows with the PIN (PLAN.md §4.6, §8).
 import { createClient } from '@supabase/supabase-js';
 import { test as base, chromium, expect, type BrowserContext, type Worker } from '@playwright/test';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -93,8 +95,20 @@ test('broadcasts the mock session, survives a reload, and ends', async ({
   const audience = await viewer(pin);
   expect(audience.joined).toMatchObject({ session: { status: 'live' } });
 
-  // The recorded session, replayed by the mock.
-  await abestar.locator('#play').click();
+  // The recorded session, replayed by the mock. The popup has focus, so the Abestar page is in the background;
+  // a short column makes it overflow, so following the newest line is visible.
+  await abestar.evaluate(() => {
+    const column = document.querySelector<HTMLElement>('[data-testid="col-right"]');
+    if (column) column.style.maxHeight = '60px';
+  });
+  // Playwright makes every page report focus; turn that off so the Abestar page knows it is in the background.
+  await (
+    await context.newCDPSession(abestar)
+  ).send('Emulation.setFocusEmulationEnabled', {
+    enabled: false,
+  });
+  await popup.bringToFront();
+  await abestar.evaluate(() => document.querySelector<HTMLElement>('#play')?.click()); // without focusing the page
   await expect
     .poll(async () => (await audience.rows()).map((r) => r.text), { timeout: 40_000 })
     .toEqual([
@@ -104,6 +118,15 @@ test('broadcasts the mock session, survives a reload, and ends', async ({
       'Pet joint health self-assessment form.',
     ]);
   expect((await audience.rows()).every((r) => r.lang === 'en-US')).toBe(true);
+  const gap = await abestar.evaluate(() => {
+    const c = document.querySelector('[data-testid="col-right"]') as HTMLElement;
+    return {
+      overflow: c.scrollHeight - c.clientHeight,
+      fromBottom: c.scrollHeight - c.clientHeight - c.scrollTop,
+    };
+  });
+  expect(gap.overflow).toBeGreaterThan(0);
+  expect(gap.fromBottom).toBeLessThanOrEqual(1); // kept at the newest line
   expect(await audience.session()).toEqual({
     target_lang: 'en-US',
     tts_on: true,
@@ -148,4 +171,64 @@ test('broadcasts the mock session, survives a reload, and ends', async ({
   await expect(popup.locator('#tts-idle')).not.toBeChecked(); // off again for every new broadcast
   await popup.locator('#tts-idle').check();
   await expect(popup.locator('input[name="voice-idle"][value="female"]')).toBeChecked();
+});
+
+/** Opens the mock Abestar page and starts a broadcast from the popup; returns the PIN. */
+async function startBroadcast(context: BrowserContext, worker: Worker, extensionId: string) {
+  await worker.evaluate(() => chrome.storage.local.set({ token: 'local-dev-token' }));
+  const abestar = await context.newPage();
+  await abestar.goto(MOCK);
+  const tabId = await worker.evaluate(
+    async (url) => (await chrome.tabs.query({ url }))[0]?.id,
+    'http://localhost:5174/*',
+  );
+  const popup = await context.newPage();
+  popup.on('dialog', (dialog) => void dialog.accept()); // "already live"
+  await popup.goto(`chrome-extension://${extensionId}/popup.html?tab=${tabId}`);
+  await popup.locator('#start').click();
+  await expect(popup.locator('#status')).toHaveText('● Live');
+  const pin = (await popup.locator('#pin').textContent())?.trim() ?? '';
+  expect((await viewer(pin)).joined).toMatchObject({ session: { status: 'live' } });
+  return { abestar, popup, pin };
+}
+
+test('closing the Abestar tab ends the broadcast', async ({ context, worker, extensionId }) => {
+  const { abestar, popup, pin } = await startBroadcast(context, worker, extensionId);
+  await abestar.close();
+  await expect(popup.locator('#ended-text')).toHaveText(
+    'The broadcast ended because the Abestar tab was closed.',
+  );
+  await expect.poll(async () => (await viewer(pin)).joined).toEqual({ error: 'invalid_pin' });
+  await popup.locator('#ok').click();
+  await expect(popup.locator('#idle')).toBeVisible();
+});
+
+test('restarting Chrome ends the broadcast', async () => {
+  const profile = mkdtempSync(join(tmpdir(), 'abestar-e2e-'));
+  const launch = () =>
+    chromium.launchPersistentContext(profile, {
+      channel: 'chromium',
+      args: [`--disable-extensions-except=${EXTENSION}`, `--load-extension=${EXTENSION}`],
+    });
+  const workerOf = async (context: BrowserContext) =>
+    context.serviceWorkers()[0] ?? (await context.waitForEvent('serviceworker'));
+  try {
+    let context = await launch();
+    let worker = await workerOf(context);
+    const extensionId = new URL(worker.url()).host;
+    const { pin } = await startBroadcast(context, worker, extensionId);
+    // Chrome quits (or crashes) before the closing tab can end the session: offline, the end cannot get through.
+    await context.setOffline(true);
+    await context.close();
+
+    context = await launch();
+    worker = await workerOf(context);
+    await expect.poll(async () => (await viewer(pin)).joined).toEqual({ error: 'invalid_pin' });
+    const popup = await context.newPage();
+    await popup.goto(`chrome-extension://${extensionId}/popup.html`);
+    await expect(popup.locator('#ended-text')).toHaveText(/because Chrome restarted/);
+    await context.close();
+  } finally {
+    rmSync(profile, { recursive: true, force: true });
+  }
 });

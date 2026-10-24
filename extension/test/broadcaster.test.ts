@@ -53,11 +53,17 @@ let store: ReturnType<typeof memoryStore>;
 let fake: ReturnType<typeof fakeApi>;
 let told: { tabId: number; message: ToContent }[];
 let token: string | undefined;
+/** chrome.storage.local's liveSessionId: survives a Chrome restart, unlike `store`. */
+let liveSessionId: string | undefined;
 
 function worker(overrides: Partial<Deps> = {}) {
   return new Broadcaster({
     api: fake.api,
     store,
+    liveSession: {
+      get: async () => liveSessionId,
+      set: async (id) => void (liveSessionId = id ?? undefined),
+    },
     getToken: async () => token,
     getDebounceMs: async () => 400,
     tell: async (tabId, message) => {
@@ -88,6 +94,7 @@ beforeEach(() => {
   fake = fakeApi();
   told = [];
   token = 'token';
+  liveSessionId = undefined;
 });
 
 afterEach(() => vi.useRealTimers());
@@ -275,8 +282,62 @@ describe('page and session lifecycle', () => {
     expect((await b.getState()).status).toBe('column-not-found');
     await b.capture(TAB, { kind: 'status', status: 'ok' });
     expect((await b.getState()).status).toBe('live');
+  });
+
+  it('ends the broadcast when the Abestar tab is closed', async () => {
+    const b = await live();
+    expect(liveSessionId).toBe('session-1');
+    await b.capture(TAB, line(1, 'Last words.'));
+    await b.tabClosed(OTHER_TAB);
+    expect(fake.api.endSession).not.toHaveBeenCalled();
     await b.tabClosed(TAB);
-    expect((await b.getState()).status).toBe('tab-closed');
+    expect(fake.written).toHaveLength(1);
+    expect(fake.api.endSession).toHaveBeenCalledWith('token', 'session-1');
+    expect(await b.getState()).toMatchObject({ status: 'ended-tab-closed', broadcast: null });
+    expect(liveSessionId).toBeUndefined();
+    await b.dismiss();
+    expect((await b.getState()).status).toBe('idle');
+  });
+
+  it('ends the session left live by a Chrome restart, and says so', async () => {
+    await live();
+    // Chrome restarted: session storage is gone, local storage is not.
+    delete store.data.state;
+    delete store.data.queue;
+    const b = worker();
+    await b.endLeftover();
+    expect(fake.api.endSession).toHaveBeenCalledWith('token', 'session-1');
+    expect(liveSessionId).toBeUndefined();
+    expect(await b.getState()).toMatchObject({ status: 'ended-restart', broadcast: null });
+    await b.endLeftover();
+    expect(fake.api.endSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves a live broadcast alone when only the worker restarted', async () => {
+    await live();
+    const b = worker(); // session storage kept
+    await b.endLeftover();
+    expect(fake.api.endSession).not.toHaveBeenCalled();
+    expect((await b.getState()).status).toBe('live');
+  });
+
+  it('retries an end that could not reach the server', async () => {
+    const b = await live();
+    fake.api.endSession.mockResolvedValueOnce(network);
+    await b.tabClosed(TAB);
+    expect(liveSessionId).toBe('session-1');
+    await b.endLeftover();
+    expect(fake.api.endSession).toHaveBeenCalledTimes(2);
+    expect(liveSessionId).toBeUndefined();
+    expect((await b.getState()).status).toBe('ended-tab-closed');
+  });
+
+  it('forgets the session when it was ended elsewhere', async () => {
+    const b = await live();
+    fake.failNext({ ok: false, error: 'session-not-live', message: 'session_not_live' });
+    await b.capture(TAB, line(1, 'Too late.'));
+    await b.flush();
+    expect(liveSessionId).toBeUndefined();
   });
 
   it('sends queued lines, ends the session and stops capture on end', async () => {
@@ -287,6 +348,7 @@ describe('page and session lifecycle', () => {
     expect(fake.api.endSession).toHaveBeenCalledWith('token', 'session-1');
     expect(told.at(-1)).toEqual({ tabId: TAB, message: { kind: 'stop' } });
     expect(await b.getState()).toMatchObject({ status: 'idle', broadcast: null });
+    expect(liveSessionId).toBeUndefined();
   });
 });
 

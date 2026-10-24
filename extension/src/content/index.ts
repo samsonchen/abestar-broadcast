@@ -3,6 +3,7 @@
 import type { CaptureMessage } from '@abestar/shared';
 import type { HelloReply, ToBackground, ToContent } from '../messages';
 import { startCapture, type Capture } from './capture';
+import { followBottom, type Follow } from './follow';
 
 declare global {
   interface Window {
@@ -15,6 +16,7 @@ if (!window.__abestarBroadcast) {
   window.__abestarBroadcast = true;
 
   let capture: Capture | null = null;
+  let follow: Follow | null = null;
 
   const toBackground = (message: ToBackground) => chrome.runtime.sendMessage(message);
   // A settled card never changes again, so a lost message would be a lost line: retry while the
@@ -29,14 +31,18 @@ if (!window.__abestarBroadcast) {
 
   const start = (debounceMs: number) => {
     capture?.stop();
+    follow?.stop();
     capture = startCapture(document, (m) => void send(m), { debounceMs });
+    follow = followBottom(document);
   };
 
   chrome.runtime.onMessage.addListener((message: ToContent, _sender, reply) => {
     if (message.kind === 'start') start(message.debounceMs);
     if (message.kind === 'stop') {
       capture?.stop();
+      follow?.stop();
       capture = null;
+      follow = null;
     }
     reply({ ok: true });
   });

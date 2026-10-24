@@ -29,9 +29,16 @@ export interface Store {
   save(state: BroadcastState, queue: QueueItem[]): Promise<void>;
 }
 
+/** The live session's id in storage that survives a Chrome restart (Settings.liveSessionId). */
+export interface LiveSession {
+  get(): Promise<string | undefined>;
+  set(sessionId: string | null): Promise<void>;
+}
+
 export interface Deps {
   api: Api;
   store: Store;
+  liveSession: LiveSession;
   getToken(): Promise<string | undefined>;
   getDebounceMs(): Promise<number>;
   /** Sends to the content script in a tab; false if nothing answered (not an Abestar page). */
@@ -49,9 +56,12 @@ export class Broadcaster {
   private flushing: Promise<void> | null = null;
   private retryScheduled = false;
   private backoffMs = 1000;
+  /** Session storage was empty at start: Chrome restarted, or the extension was reloaded or updated. */
+  private stateLost = false;
 
   constructor(private readonly deps: Deps) {
     this.ready = deps.store.load().then(({ state, queue }) => {
+      this.stateLost = !state;
       if (state) this.state = state;
       if (queue) this.queue = queue;
       deps.showStatus(this.state.status);
@@ -89,6 +99,7 @@ export class Broadcaster {
       if (res.error === 'invalid-token') return { ok: false, error: 'invalid-token' };
       return { ok: false, error: 'network', message: res.message };
     }
+    await this.deps.liveSession.set(res.value.id);
 
     const broadcast: Broadcast = {
       sessionId: res.value.id,
@@ -110,16 +121,41 @@ export class Broadcaster {
     return { ok: true };
   }
 
-  async end(): Promise<void> {
+  /** Ends the broadcast: by the presenter, or because the Abestar tab was closed. */
+  async end(status: 'idle' | 'ended-tab-closed' = 'idle'): Promise<void> {
     await this.ready;
     const { broadcast } = this.state;
     if (!broadcast) return;
     await this.flush();
-    const token = await this.deps.getToken();
-    if (token) await this.deps.api.endSession(token, broadcast.sessionId);
+    await this.endOnServer(broadcast.sessionId);
     await this.deps.tell(broadcast.tabId, { kind: 'stop' });
     this.queue = [];
-    await this.update({ ...IDLE_STATE });
+    await this.update({ ...IDLE_STATE, status });
+  }
+
+  /**
+   * Ends a session the worker no longer tracks: after a Chrome restart (or an extension reload or update), which
+   * clears session storage, or after an end that could not reach the server. Called whenever the worker starts.
+   */
+  async endLeftover(): Promise<void> {
+    await this.ready;
+    const sessionId = await this.deps.liveSession.get();
+    if (!sessionId || this.state.broadcast?.sessionId === sessionId) return;
+    if (!(await this.endOnServer(sessionId))) return; // offline: tried again when the worker next starts
+    if (this.stateLost && !this.state.broadcast && this.state.status === 'idle') {
+      await this.update({ status: 'ended-restart' });
+    }
+  }
+
+  /** Ends a session on the server; false if it could not be reached (the id is kept for endLeftover). */
+  private async endOnServer(sessionId: string): Promise<boolean> {
+    const token = await this.deps.getToken();
+    if (!token) return false;
+    const res = await this.deps.api.endSession(token, sessionId);
+    if (!res.ok && res.error === 'network') return false;
+    // Unless a new broadcast started meanwhile.
+    if ((await this.deps.liveSession.get()) === sessionId) await this.deps.liveSession.set(null);
+    return true;
   }
 
   /** Turns read-aloud on or off, or switches its voice (e.g. for a second presenter), while live. */
@@ -135,10 +171,10 @@ export class Broadcaster {
     return { ok: true };
   }
 
-  /** The presenter acknowledged that the broadcast was ended elsewhere. */
+  /** The presenter acknowledged that the broadcast ended without them (elsewhere, tab closed, restart). */
   async dismiss(): Promise<void> {
     await this.ready;
-    if (this.state.status === 'ended-remotely') await this.update({ ...IDLE_STATE });
+    if (this.state.status.startsWith('ended-')) await this.update({ ...IDLE_STATE });
   }
 
   /** A content script (re)loaded; tell it whether to capture. */
@@ -178,7 +214,7 @@ export class Broadcaster {
 
   async tabClosed(tabId: number): Promise<void> {
     await this.ready;
-    if (this.state.broadcast?.tabId === tabId) await this.update({ status: 'tab-closed' });
+    if (this.state.broadcast?.tabId === tabId) await this.end('ended-tab-closed');
   }
 
   /** Sends queued lines in order; one flush at a time. Also called by the worker's periodic alarm. */
@@ -210,6 +246,7 @@ export class Broadcaster {
       } else if (res.error === 'session-not-live') {
         // Ended elsewhere: another presenter started a broadcast, or the 2-hour auto-end.
         await this.deps.tell(this.state.broadcast.tabId, { kind: 'stop' });
+        await this.deps.liveSession.set(null);
         this.queue = [];
         return this.update({ ...IDLE_STATE, status: 'ended-remotely', lastError: res.message });
       } else if (res.error === 'invalid-token') {

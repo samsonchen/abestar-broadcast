@@ -27,6 +27,11 @@ export interface Settings {
   lastTitle?: string;
   /** The popup's read-aloud voice, remembered across broadcasts. */
   voice?: Voice;
+  /**
+   * The live session, kept here as well as in session storage: Chrome clears session storage when it restarts (and
+   * when the extension is reloaded or updated), and this is how the worker then finds the session to end it.
+   */
+  liveSessionId?: string;
 }
 
 export const DEFAULT_VOICE: Voice = 'female';
