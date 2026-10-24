@@ -59,33 +59,18 @@ The broadcaster picks **Female** or **Male** in the extension to match the speak
 
 ## 4. Test the key from Terminal
 
-This spends about 100 credits per run. Paste the key and a voice ID when asked; they are not saved in your shell
-history. The commands are for zsh (the macOS default). Run it once with each voice ID.
+This spends about 100 credits. From the repository root, give it both voice IDs:
 
 ```sh
-read -rs "XI_KEY?API key: "; echo
-read -r "VOICE?Voice ID: "
-curl -sS -o /tmp/tts-test.mp3 -w '%{http_code}\n' \
-  "https://api.elevenlabs.io/v1/text-to-speech/$VOICE?output_format=mp3_22050_32" \
-  -H "xi-api-key: $XI_KEY" -H 'Content-Type: application/json' \
-  -d '{"text":"The nine-in-one elections will be held on November 28th.","model_id":"eleven_flash_v2_5","language_code":"en"}'
-afplay /tmp/tts-test.mp3
-unset XI_KEY
+scripts/elevenlabs-test.sh <female-voice-id> <male-voice-id>
 ```
 
-Expected: `200` and you hear the sentence. That is the same request and format the Edge Function will send. Other
-results are in §8.
+It asks for the API key (hidden; type or paste it at the prompt, then Enter), sends the same request the Edge
+Function will send, plays the sentence for each voice, and shows the balance the extension popup will show (needs
+the **User** permission). Expected: `OK (HTTP 200)` for each voice, you hear the sentence twice, and a balance line.
+On an error it prints ElevenLabs' message; see §8.
 
-The balance the popup shows (needs the **User** permission; free):
-
-```sh
-read -rs "XI_KEY?API key: "; echo
-curl -sS https://api.elevenlabs.io/v1/user/subscription -H "xi-api-key: $XI_KEY" |
-  jq '{character_count, character_limit, next_character_count_reset_unix}'
-unset XI_KEY
-```
-
-These are the **account's** credits for the billing period, not what is left of the key's own credit quota (step 2.4);
+The balance is the **account's** credits for the billing period, not what is left of the key's own credit quota (step 2.4);
 ElevenLabs does not report that one through the API.
 
 ## 5. Connect it to Supabase
