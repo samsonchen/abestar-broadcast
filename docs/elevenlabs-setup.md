@@ -14,8 +14,11 @@ A one-hour talk produces about **55 000 characters** of English, and nothing is 
 | Plan    | Price/month | Credits/month | Speech per month (at 0.5–1 credit/char) | Commercial use               |
 | ------- | ----------- | ------------- | --------------------------------------- | ---------------------------- |
 | Free    | $0          | 10 000        | ~10–20 min                              | **No**; attribution required |
-| Starter | $6          | 30 000        | ~30–60 min                              | Yes                          |
+| Starter | $6          | 40 000 ¹      | ~40–80 min                              | Yes                          |
 | Creator | $22         | 121 000       | ~2–4 h                                  | Yes                          |
+
+¹ The owner's Starter account showed 40 000 credits on 2026-10-24 (the pricing page said 30 000 when this was
+written); the popup's credits line shows the real figure.
 
 Recommendation:
 
