@@ -45,7 +45,11 @@ const manifest = {
   ],
   optional_host_permissions: ['https://*/*', 'http://*/*'],
   background: { service_worker: 'background.js', type: 'module' },
-  content_scripts: [{ matches: contentMatches, js: ['content.js'], run_at: 'document_idle' }],
+  content_scripts: [
+    { matches: contentMatches, js: ['content.js'], run_at: 'document_idle' },
+    // In the page's own world from the start, to keep Abestar typing in a background tab (src/content/frames.ts).
+    { matches: contentMatches, js: ['main-world.js'], run_at: 'document_start', world: 'MAIN' },
+  ],
   ...(hasIcons ? { icons } : {}),
   action: {
     default_popup: 'popup.html',
@@ -62,6 +66,7 @@ mkdirSync(out, { recursive: true });
 await esbuild.build({
   entryPoints: {
     content: join(here, 'src/content/index.ts'),
+    'main-world': join(here, 'src/content/main-world.ts'),
     popup: join(here, 'src/popup/index.ts'),
     options: join(here, 'src/options/index.ts'),
     qr: join(here, 'src/qr/index.ts'),

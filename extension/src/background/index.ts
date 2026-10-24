@@ -109,12 +109,20 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 // Abestar hosts added on the options page get the content script too.
 async function registerExtraHosts() {
   const { extraHosts = [] } = await settings();
-  const existing = await chrome.scripting.getRegisteredContentScripts({ ids: ['extra-hosts'] });
+  const ids = ['extra-hosts', 'extra-hosts-main'];
+  const existing = await chrome.scripting.getRegisteredContentScripts({ ids });
   if (existing.length > 0)
-    await chrome.scripting.unregisterContentScripts({ ids: ['extra-hosts'] });
+    await chrome.scripting.unregisterContentScripts({ ids: existing.map((script) => script.id) });
   if (extraHosts.length === 0) return;
   await chrome.scripting.registerContentScripts([
     { id: 'extra-hosts', matches: extraHosts, js: ['content.js'], runAt: 'document_idle' },
+    {
+      id: 'extra-hosts-main',
+      matches: extraHosts,
+      js: ['main-world.js'],
+      runAt: 'document_start',
+      world: 'MAIN',
+    },
   ]);
 }
 chrome.runtime.onInstalled.addListener(() => void registerExtraHosts());

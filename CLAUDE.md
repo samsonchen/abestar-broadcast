@@ -30,6 +30,9 @@ supabase stop && colima stop
 Extension: `npm run build -w @abestar/extension` (prod, from `shared/public-config.json`), `build:local` (local stack +
 mock on localhost:5174), `package` (prod zip in `extension/dist/`). Logic that touches `chrome.*` stays in thin
 `index.ts` files; `capture.ts` and `broadcaster.ts` take their dependencies as arguments and are unit-tested.
+`content/main-world.ts` runs in the page's own world (`world: "MAIN"`) and keeps Abestar's requestAnimationFrame
+typing going in a background tab during a broadcast (`frames.ts`). Playwright keeps every page visible, so the e2e
+tests cannot cover a hidden tab; `frames.test.ts` does, with a fake window.
 
 Viewer: `npm run dev:local -w @abestar/viewer` serves it on http://localhost:5173/abestar-broadcast/ against the local
 stack (Vite mode `localstack`, config from `shared/local-config.json`); `npm run build -w @abestar/viewer` builds for

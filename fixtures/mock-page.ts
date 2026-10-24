@@ -1,7 +1,15 @@
 // Wires the toolbar of mock-abestar.html to the mock.
 import { mountMock, SESSION_1 } from './mock-abestar';
 
-const mock = mountMock(document.querySelector<HTMLElement>('#app') as HTMLElement);
+// Typed with animation frames like the real page, so a background tab pauses it the same way.
+const mock = mountMock(
+  document.querySelector<HTMLElement>('#app') as HTMLElement,
+  'en-US',
+  'zh-TW',
+  {
+    animationFrames: true,
+  },
+);
 const textInput = document.querySelector<HTMLInputElement>('#text') as HTMLInputElement;
 
 const on = (id: string, fn: () => void) =>

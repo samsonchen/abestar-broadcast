@@ -58,8 +58,23 @@ interface PendingCard {
   dots: ReturnType<typeof setInterval>;
 }
 
-export function mountMock(root: HTMLElement, lang = 'en-US', sourceLang = 'zh-TW'): MockAbestar {
+export interface MockOptions {
+  /**
+   * Type with requestAnimationFrame, as the real page does (checked on 2026-10-24: 251 frames for one sentence,
+   * no short timers), so Chrome pauses the typing in a background tab. The default, a 60 Hz timer, suits jsdom and
+   * fake timers.
+   */
+  animationFrames?: boolean;
+}
+
+export function mountMock(
+  root: HTMLElement,
+  lang = 'en-US',
+  sourceLang = 'zh-TW',
+  { animationFrames = false }: MockOptions = {},
+): MockAbestar {
   const doc = root.ownerDocument;
+  const win = doc.defaultView as Window;
   root.innerHTML =
     '<div class="flex gap-4">' +
     `<section class="flex-1"><h2>Speaker <span>(${sourceLang})</span></h2>` +
@@ -93,6 +108,27 @@ export function mountMock(root: HTMLElement, lang = 'en-US', sourceLang = 'zh-TW
     clearTimeout(id);
     clearInterval(id);
     timers.delete(id);
+  };
+
+  /** Animation frames in flight, cancelled by stop(). */
+  const frames = new Set<number>();
+  /** Calls fn on every typing frame until it returns false. */
+  const typeEachFrame = (fn: () => boolean) => {
+    if (!animationFrames) {
+      const typing = every(TYPING_FRAME_MS, () => {
+        if (!fn()) cancel(typing);
+      });
+      return;
+    }
+    const step = () => {
+      frames.delete(id);
+      if (fn()) {
+        id = win.requestAnimationFrame(step);
+        frames.add(id);
+      }
+    };
+    let id = win.requestAnimationFrame(step);
+    frames.add(id);
   };
 
   const mock: MockAbestar = {
@@ -143,10 +179,10 @@ export function mountMock(root: HTMLElement, lang = 'en-US', sourceLang = 'zh-TW
         const typed = doc.createTextNode(text.slice(0, shown));
         p.append(typed);
         if (shown >= text.length) return;
-        const typing = every(TYPING_FRAME_MS, () => {
+        typeEachFrame(() => {
           shown = Math.min(shown + CHARS_PER_FRAME, text.length);
           typed.data = text.slice(0, shown);
-          if (shown >= text.length) cancel(typing);
+          return shown < text.length;
         });
       });
     },
@@ -173,6 +209,8 @@ export function mountMock(root: HTMLElement, lang = 'en-US', sourceLang = 'zh-TW
 
     stop() {
       for (const id of timers) cancel(id);
+      for (const id of frames) win.cancelAnimationFrame(id);
+      frames.clear();
     },
   };
   return mock;
