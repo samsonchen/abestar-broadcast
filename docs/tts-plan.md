@@ -7,13 +7,14 @@ applies. The ElevenLabs account steps are in
 
 ## 0. Owner requirements (2026-10-23)
 
-| #   | Requirement                                                                                                                                                                                          |
-| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| R1  | TTS is **off** by default on the viewer.                                                                                                                                                             |
-| R2  | The viewer page has a toggle to turn TTS on and off.                                                                                                                                                 |
-| R3  | TTS is offered only when the target language is English. The design must allow more languages later without restructuring.                                                                           |
-| R4  | Speech runs **one line behind** the text, so a line is spoken only after the next line has appeared (it has had time to settle). A line that is revised after it was spoken is **not** spoken again. |
-| R5  | When no viewer has TTS on, no ElevenLabs call is made.                                                                                                                                               |
+| #   | Requirement                                                                                                                                                                                                                                                                                                    |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| R1  | TTS is **off** by default on the viewer.                                                                                                                                                                                                                                                                       |
+| R2  | The viewer page has a toggle to turn TTS on and off.                                                                                                                                                                                                                                                           |
+| R3  | TTS is offered when the target language has voices: English, and Chinese (one voice pair for `zh-TW` and `zh-CN`, added 2026-10-24). More languages are rows in `private.tts_voices`.                                                                                                                          |
+| R4  | Speech runs **one line behind** the text, so a line is spoken only after the next line has appeared (it has had time to settle). A line that is revised after it was spoken is **not** spoken again.                                                                                                           |
+| R5  | When no viewer has TTS on, no ElevenLabs call is made.                                                                                                                                                                                                                                                         |
+| R8  | The translation may switch language mid-talk. A viewer listens in the language they turned read-aloud on in: it pauses (with a hint) while the translation is in another language and resumes when it returns; a line is synthesized only if some viewer listens in its language (`0003_tts_viewer_lang.sql`). |
 
 Added 2026-10-24, after the first implementation:
 
@@ -206,7 +207,7 @@ export interface TtsClip {
 
 - `api.ts` / `broadcaster.ts`: carry `lang` from the capture message to `upsert_segment`. The persisted queue item
   gets a `lang` field (old queued items without it send null).
-- **Read-aloud checkbox (R6)** in the popup, under the title: "Offer read-aloud to viewers (English)". Unticked for
+- **Read-aloud checkbox (R6)** in the popup, under the title: "Offer read-aloud to viewers (English, Chinese)". Unticked for
   every new broadcast (not remembered), sent with `start_session`, and switchable while live (`set_session_tts`).
 - **Voice selector (D1)**, shown while the checkbox is ticked: Female / Male. Remembered (`chrome.storage`), default
   Female. Sent with `start_session`; changing it while live calls `set_session_tts`. Shown even when the target

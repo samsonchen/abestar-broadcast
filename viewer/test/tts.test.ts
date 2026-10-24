@@ -151,17 +151,21 @@ describe('Tts', () => {
   let server: ReturnType<typeof fakeBackend>;
   let active: boolean[];
   let needsTap: boolean[];
+  let waiting: (string | null)[];
   let tts: Tts;
 
   beforeEach(() => {
     server = fakeBackend();
     active = [];
     needsTap = [];
+    waiting = [];
     tts = new Tts(server.backend, SESSION.id, fake.player, {
       active: (on) => active.push(on),
       speaking: (line) => speaking.push(line),
       needsTap: (on) => needsTap.push(on),
+      waiting: (lang) => waiting.push(lang),
     });
+    tts.setLanguage('en');
   });
 
   it('is off until turned on, and then listens, unlocks audio and tells the server', () => {
@@ -171,7 +175,7 @@ describe('Tts', () => {
     expect(tts.enabled).toBe(true);
     expect(server.listening).toBe(true);
     expect(fake.player.unlocked).toBe(1);
-    expect(server.backend.setTts).toHaveBeenCalledWith(SESSION.id, true);
+    expect(server.backend.setTts).toHaveBeenCalledWith(SESSION.id, true, 'en');
     expect(active).toEqual([true]);
   });
 
@@ -242,6 +246,44 @@ describe('Tts', () => {
     expect(server.backend.listen).not.toHaveBeenCalled();
     expect(fake.player.unlocked).toBe(0);
     expect(needsTap).toEqual([]);
+  });
+
+  it('listens in the language it was turned on in, skipping lines of another', async () => {
+    tts.enable();
+    server.send({ ...clip(1), lang: 'zh-TW' });
+    server.send(clip(2));
+    await fake.finish();
+    expect(fake.played).toEqual(['0:2:0']);
+  });
+
+  it('waits while the translation is in another language, and carries on when it is back', async () => {
+    tts.enable();
+    tts.setLanguage('zh'); // the presenter switched Abestar to Chinese
+    expect(waiting).toEqual(['en']);
+    expect(tts.enabled).toBe(true);
+    tts.setLanguage(null); // then to a language without voices
+    tts.setLanguage('en');
+    expect(waiting).toEqual(['en', 'en', null]);
+    await vi.advanceTimersByTimeAsync(HEARTBEAT_MS);
+    expect(server.backend.setTts).toHaveBeenLastCalledWith(SESSION.id, true, 'en');
+    server.send(clip(5));
+    expect(fake.played).toEqual(['0:5:0']);
+  });
+
+  it('turned off and on again, listens in the new language', () => {
+    tts.enable();
+    tts.setLanguage('zh');
+    tts.toggle();
+    expect(waiting.at(-1)).toBeNull();
+    tts.toggle();
+    expect(server.backend.setTts).toHaveBeenLastCalledWith(SESSION.id, true, 'zh');
+    server.send({ ...clip(1), lang: 'zh-TW' });
+    expect(fake.played).toEqual(['0:1:0']);
+  });
+
+  it('does not report language changes while off', () => {
+    tts.setLanguage('zh');
+    expect(waiting).toEqual([]);
   });
 
   it('survives a failing heartbeat', async () => {

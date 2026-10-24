@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import {
   base64,
   chunkText,
+  maxChunk,
+  MAX_CJK_CHUNK,
   elevenLabsBody,
   isJob,
   MAX_CHUNK,
@@ -55,6 +57,29 @@ describe('chunkText', () => {
 
   it('treats CJK sentence ends as boundaries', () => {
     expect(chunkText('第一句。第二句！', 5)).toEqual(['第一句。', '第二句！']);
+  });
+
+  it('keeps Chinese chunks to about 25 s of speech, packed without spaces', () => {
+    const sentence = '台北市長選舉的開票結果將在今晚公布。'; // 18 characters
+    const text = sentence.repeat(20);
+    expect(maxChunk(text)).toBe(MAX_CJK_CHUNK);
+    const chunks = chunkText(text);
+    expect(chunks.every((c) => c.length <= MAX_CJK_CHUNK)).toBe(true);
+    expect(chunks.join('')).toBe(text);
+    expect(chunks[0]).toBe(sentence.repeat(Math.floor(MAX_CJK_CHUNK / sentence.length)));
+  });
+
+  it('cuts a long Chinese sentence after a comma', () => {
+    const clause = '我們今天要討論的議題非常重要，'; // 15 characters
+    const text = `${clause.repeat(10)}謝謝。`;
+    const chunks = chunkText(text);
+    expect(chunks.every((c) => c.length <= MAX_CJK_CHUNK)).toBe(true);
+    expect(chunks[0]?.endsWith('，')).toBe(true);
+    expect(chunks.join('')).toBe(text);
+  });
+
+  it('uses the English size for English with a few Chinese names', () => {
+    expect(maxChunk('Mayor 蔣萬安 spoke this morning about the budget.')).toBe(MAX_CHUNK);
   });
 });
 

@@ -263,5 +263,56 @@ reset role;
 select results_eq($$select tts_on, tts_lang from public.sessions where id = current_setting('test.sid')::uuid$$,
   $$values (false, null::text)$$, 'read-aloud is off unless the broadcaster turns it on');
 
+-- ---------------------------------------------------------------- Chinese: one voice set for zh-TW and zh-CN
+insert into private.tts_voices (lang, voice, voice_id, language_code) values
+  ('zh', 'female', 'voice-zh-f', 'zh'),
+  ('zh', 'male', 'voice-zh-m', 'zh');
+set local role anon;
+select set_config('test.new', public.start_session('local-dev-token', 'Chinese talk', null, true, 'male', true)::text,
+  true);
+select set_config('test.sid', current_setting('test.new')::jsonb ->> 'id', true);
+reset role;
+select pg_temp.line(1, '各位早安。', 'zh-TW');
+select is((select tts_lang from public.sessions where id = current_setting('test.sid')::uuid), 'zh',
+  'a Traditional Chinese line selects the Chinese voices');
+select pg_temp.line(2, '各位早安。', 'zh-CN');
+select is((pg_temp.job(1)).voice, 'male', 'and is spoken with the chosen Chinese voice');
+select is((select tts_lang from public.sessions where id = current_setting('test.sid')::uuid), 'zh',
+  'Simplified Chinese uses the same voices');
+select is((private.tts_voice_for('zh-Hant-TW', 'female')).voice_id, 'voice-zh-f',
+  'longer Chinese tags (zh-Hant-TW) too');
+
+-- ---------------------------------------------------------------- per-viewer language (the talk switches language)
+set local role authenticated;
+select pg_temp.as_viewer('11111111-1111-4111-8111-111111111111');
+select ok(public.join_session(current_setting('test.new')::jsonb ->> 'pin') is not null, 'the viewer joins');
+select is(public.set_tts(current_setting('test.sid')::uuid, true, 'en-US'), true,
+  'a viewer turns read-aloud on in English');
+reset role;
+select is((select tts_lang from public.session_viewers where user_id = '11111111-1111-4111-8111-111111111111'
+  and session_id = current_setting('test.sid')::uuid), 'en', 'its language is stored as the primary subtag');
+select pg_temp.line(3, '第三句。', 'zh-TW');
+select is((pg_temp.job(2)).skip_reason, 'no_listeners', 'a Chinese line is not synthesized for an English listener');
+
+set local role authenticated;
+select pg_temp.as_viewer('11111111-1111-4111-8111-111111111111');
+select public.set_tts(current_setting('test.sid')::uuid, true, 'zh-TW');
+reset role;
+select set_config('test.requests', pg_temp.requests()::text, true);
+select pg_temp.line(4, 'Back to English.', 'en-US');
+select is((pg_temp.job(3)).status, 'queued', 'it is for a Chinese listener');
+select is(pg_temp.requests(), current_setting('test.requests')::int + 1, 'and is sent to the Edge Function');
+select is((select convert_from(body, 'utf8')::jsonb ->> 'next_text' from net.http_request_queue order by id desc limit 1), null,
+  'without the English line after it as context');
+select pg_temp.line(5, 'Still English.', 'en-US');
+select is((pg_temp.job(4)).skip_reason, 'no_listeners', 'an English line is not synthesized for a Chinese listener');
+
+set local role authenticated;
+select pg_temp.as_viewer('11111111-1111-4111-8111-111111111111');
+select public.set_tts(current_setting('test.sid')::uuid, true); -- a viewer page from before migration 0003
+reset role;
+select pg_temp.line(6, 'Any language.', 'en-US');
+select is((pg_temp.job(5)).status, 'queued', 'a viewer without a language listens to every language');
+
 select * from finish();
 rollback;

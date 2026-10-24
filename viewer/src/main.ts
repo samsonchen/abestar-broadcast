@@ -9,6 +9,17 @@ import { byId, domView } from './ui';
 
 const TTS_HINT = 'Read-aloud on. Keep this page open with the screen on; earphones recommended.';
 const TTS_HINT_TAP = 'Tap anywhere on the page to resume read-aloud.';
+const ttsHintWaiting = (lang: string) =>
+  `Read-aloud paused: it continues when the translation is back in ${languageName(lang)}. ` +
+  'To listen in the new language, turn read-aloud off and on.';
+
+function languageName(lang: string): string {
+  try {
+    return new Intl.DisplayNames(['en'], { type: 'language' }).of(lang) ?? lang;
+  } catch {
+    return lang;
+  }
+}
 
 const JOIN_ERRORS: Record<Exclude<JoinResult, { ok: true }>['error'], string> = {
   'invalid-pin': 'PIN not valid or broadcast has ended.',
@@ -79,11 +90,25 @@ function follow(session: Session) {
   // Read-aloud (docs/tts-plan.md §8): off on every load; the button shows only when the server offers it.
   const ttsButton = byId<HTMLButtonElement>('tts');
   const ttsHint = byId('tts-hint');
+  let tapNeeded = false;
+  let waitingFor: string | null = null;
+  const showHint = () => {
+    ttsHint.textContent = tapNeeded
+      ? TTS_HINT_TAP
+      : waitingFor
+        ? ttsHintWaiting(waitingFor)
+        : TTS_HINT;
+  };
   const offerTts = (row: Session) => {
-    // Absent (not just null) while the hosted database predates read-aloud.
-    const offered = row.status === 'live' && Boolean(row.tts_lang);
-    ttsButton.hidden = !offered;
-    if (!offered) tts.disable(row.status === 'live');
+    const live = row.status === 'live';
+    debug(`language ${row.target_lang ?? '?'}, read-aloud ${row.tts_lang ?? 'not offered'}`);
+    // The broadcaster's switch; tts_on is absent while the hosted database predates read-aloud.
+    const broadcasterOn = live && (row.tts_on ?? Boolean(row.tts_lang));
+    if (!broadcasterOn) tts.disable(live);
+    // Null while the translation is in a language without voices: a listener waits for theirs to return.
+    tts.setLanguage(broadcasterOn ? row.tts_lang : null);
+    // Also shown while on and waiting, so that it can be turned off.
+    ttsButton.hidden = !(tts.enabled || (broadcasterOn && row.tts_lang));
   };
 
   const view = domView(session.target_lang, {
@@ -96,9 +121,9 @@ function follow(session: Session) {
   });
   const tts = new Tts(
     {
-      setTts: async (id, on) => {
-        const listening = await backend.setTts(id, on);
-        debug(`heartbeat ${on ? 'on' : 'off'}: ${listening ? 'ok' : 'refused'}`);
+      setTts: async (id, on, lang) => {
+        const listening = await backend.setTts(id, on, lang);
+        debug(`heartbeat ${on ? `on (${lang ?? 'any'})` : 'off'}: ${listening ? 'ok' : 'refused'}`);
         return listening;
       },
       listen: (id, onClip) =>
@@ -123,7 +148,13 @@ function follow(session: Session) {
       speaking: (line) => view.speaking(line),
       needsTap: (on) => {
         debug(`read-aloud needs a tap: ${on}`);
-        ttsHint.textContent = on ? TTS_HINT_TAP : TTS_HINT;
+        tapNeeded = on;
+        showHint();
+      },
+      waiting: (lang) => {
+        debug(`read-aloud ${lang ? `waits for ${lang}` : 'in the current language'}`);
+        waitingFor = lang;
+        showHint();
       },
     },
   );

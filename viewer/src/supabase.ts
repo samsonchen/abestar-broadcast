@@ -107,8 +107,12 @@ export function supabaseBackend(config: Config): Backend & TtsBackend {
       return () => void sb.removeChannel(channel);
     },
 
-    async setTts(sessionId, on) {
-      const { data, error } = await sb.rpc('set_tts', { p_session_id: sessionId, p_on: on });
+    async setTts(sessionId, on, lang = null) {
+      const { data, error } = await sb.rpc('set_tts', {
+        p_session_id: sessionId,
+        p_on: on,
+        p_lang: lang,
+      });
       if (error) throw error;
       return data === true;
     },

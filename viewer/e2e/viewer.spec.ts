@@ -26,8 +26,8 @@ async function broadcast(title: string, { targetLang = 'en-US', tts = false } = 
   };
   return {
     pin,
-    line: (seq: number, text: string, epoch = 1) =>
-      call('upsert_segment', { p_epoch: epoch, p_seq: seq, p_text: text }),
+    line: (seq: number, text: string, epoch = 1, lang?: string) =>
+      call('upsert_segment', { p_epoch: epoch, p_seq: seq, p_text: text, p_lang: lang ?? null }),
     readAloud: (on: boolean) => call('set_session_tts', { p_on: on, p_voice: 'female' }),
     end: () => call('end_session', {}),
   };
@@ -241,6 +241,33 @@ test('read-aloud: offered when the broadcaster turns it on, for English only, of
 
   await b.end();
   await expect(button).toBeHidden();
+});
+
+test('read-aloud waits while the translation is in another language, then carries on', async ({
+  page,
+}) => {
+  const b = await broadcast('Two languages', { tts: true });
+  await b.line(1, 'Good morning.', 1, 'en-US');
+  await page.goto(`${VIEWER}?pin=${b.pin}`);
+  const button = page.locator('#tts');
+  const hint = page.locator('#tts-hint');
+  await button.click();
+  await expect(hint).toContainText('Read-aloud on');
+
+  await b.line(2, '各位早安。', 1, 'zh-TW'); // the presenter switched Abestar to Chinese
+  await expect(hint).toContainText('back in English');
+  await expect(button).toHaveAttribute('aria-pressed', 'true');
+
+  await b.line(3, 'Back to English.', 1, 'en-US');
+  await expect(hint).toContainText('Read-aloud on');
+  await expect(button).toHaveAttribute('aria-pressed', 'true');
+
+  await b.line(4, '再一次中文。', 1, 'zh-TW');
+  await expect(hint).toContainText('back in English');
+  await button.click(); // off and on: now for Chinese
+  await button.click();
+  await expect(hint).toContainText('Read-aloud on');
+  await b.end();
 });
 
 test('?debug shows how the screen is kept on, and released at the end', async ({ page }) => {

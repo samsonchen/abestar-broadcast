@@ -7,7 +7,9 @@ select private.set_broadcast_token('local-dev-token');
 update private.tts_settings set enabled = true, function_url = 'http://kong:8000/functions/v1/tts';
 insert into private.tts_voices (lang, voice, voice_id, language_code) values
   ('en', 'female', 'stub-female', 'en'),
-  ('en', 'male', 'stub-male', 'en');
+  ('en', 'male', 'stub-male', 'en'),
+  ('zh', 'female', 'stub-female', 'zh'),
+  ('zh', 'male', 'stub-male', 'zh');
 select vault.create_secret('local-tts-secret', 'tts_function_secret');
 
 insert into public.sessions (id, title, target_lang, tts_on)

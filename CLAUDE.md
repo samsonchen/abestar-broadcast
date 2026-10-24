@@ -39,7 +39,7 @@ stack (Vite mode `localstack`, config from `shared/local-config.json`); `npm run
 GitHub Pages from `shared/public-config.json`. `transcript.ts`, `diff.ts` and `live.ts` are pure and unit-tested;
 `supabase.ts` is the only file that talks to Supabase (the `Backend` interface).
 
-Read-aloud (`docs/tts-plan.md`): the database decides what is spoken (`supabase/migrations/0002_tts.sql`), the Edge
+Read-aloud (`docs/tts-plan.md`): the database decides what is spoken (`supabase/migrations/0002_tts.sql`; each listener's language: `0003`), the Edge
 Function `supabase/functions/tts` calls ElevenLabs (pure parts in `lib.ts`, tested in `supabase/unit`;
 `tts-credits` reports the balance to the extension popup; shared settings in `_shared/env.ts`), and the
 viewer plays clips (`audio-queue.ts` and `tts.ts` are pure and unit-tested; `player.ts` is Web Audio). Locally and in

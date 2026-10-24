@@ -25,6 +25,16 @@ export interface SpeechRequest {
  * message limit.
  */
 export const MAX_CHUNK = 400;
+/** The same 25 s in Chinese or Japanese, spoken at about 5 characters a second against English's 15. */
+export const MAX_CJK_CHUNK = 120;
+
+const CJK = /[\u3000-\u303f\u3400-\u9fff\uf900-\ufaff\uff00-\uffef]/;
+const CJK_ALL = new RegExp(CJK.source, 'g');
+
+/** The chunk size for a line: MAX_CJK_CHUNK when at least a third of it is CJK characters. */
+export function maxChunk(text: string): number {
+  return (text.match(CJK_ALL)?.length ?? 0) * 3 >= text.length ? MAX_CJK_CHUNK : MAX_CHUNK;
+}
 
 export function isJob(body: unknown): body is TtsJob {
   const b = body as Record<string, unknown> | null;
@@ -45,17 +55,28 @@ export function isJob(body: unknown): body is TtsJob {
   );
 }
 
-/** Splits text into chunks of at most `max` characters, at sentence ends, else at spaces, else anywhere. */
-export function chunkText(text: string, max = MAX_CHUNK): string[] {
+/** Where to cut an over-long sentence: after a space or a comma-like pause, else anywhere. */
+function cutAt(rest: string, max: number): number {
+  const space = rest.lastIndexOf(' ', max);
+  const head = rest.slice(0, max);
+  const pause = Math.max(...[...'，、；：,;'].map((p) => head.lastIndexOf(p)));
+  const cut = Math.max(space, pause >= 0 ? pause + 1 : -1);
+  return cut > 0 ? cut : max;
+}
+
+/**
+ * Splits text into chunks of at most `max` characters, at sentence ends, else at spaces or commas, else anywhere.
+ * Pieces of Chinese or Japanese are joined without a space.
+ */
+export function chunkText(text: string, max = maxChunk(text)): string[] {
   const clean = text.replace(/\s+/g, ' ').trim();
   if (clean.length <= max) return clean ? [clean] : [];
 
   const pieces: string[] = [];
-  for (const sentence of clean.match(/[^.!?。！？]+(?:[.!?。！？]+["'”’)\]]*|$)/g) ?? [clean]) {
+  for (const sentence of clean.match(/[^.!?。！？]+(?:[.!?。！？]+["'”’)\]」』]*|$)/g) ?? [clean]) {
     let rest = sentence.trim();
     while (rest.length > max) {
-      const space = rest.lastIndexOf(' ', max);
-      const cut = space > 0 ? space : max;
+      const cut = cutAt(rest, max);
       pieces.push(rest.slice(0, cut).trim());
       rest = rest.slice(cut).trim();
     }
@@ -65,15 +86,17 @@ export function chunkText(text: string, max = MAX_CHUNK): string[] {
   const chunks: string[] = [];
   for (const piece of pieces) {
     const last = chunks.at(-1);
-    if (last !== undefined && last.length + 1 + piece.length <= max)
-      chunks[chunks.length - 1] = `${last} ${piece}`;
+    const gap =
+      last !== undefined && CJK.test(last.at(-1) ?? '') && CJK.test(piece[0] ?? '') ? '' : ' ';
+    if (last !== undefined && last.length + gap.length + piece.length <= max)
+      chunks[chunks.length - 1] = `${last}${gap}${piece}`;
     else chunks.push(piece);
   }
   return chunks;
 }
 
 /** The ElevenLabs requests for a line: one per chunk, each with its neighbours as context. */
-export function speechRequests(job: TtsJob, max = MAX_CHUNK): SpeechRequest[] {
+export function speechRequests(job: TtsJob, max = maxChunk(job.text)): SpeechRequest[] {
   const chunks = chunkText(job.text, max);
   return chunks.map((text, i) => ({
     text,
