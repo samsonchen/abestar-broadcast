@@ -243,10 +243,12 @@ test('read-aloud: offered when the broadcaster turns it on, for English only, of
   await expect(button).toBeHidden();
 });
 
-test('?debug shows how the screen is kept on', async ({ page }) => {
+test('?debug shows how the screen is kept on, and released at the end', async ({ page }) => {
   const b = await broadcast('Debug');
   await page.goto(`${VIEWER}?pin=${b.pin}&debug`);
   await expect(page.locator('pre.debug')).toContainText('status: live');
   await expect(page.locator('pre.debug')).toContainText(/screen: (wake lock|video)/);
   await b.end();
+  // The phone may sleep again once the broadcast is over.
+  await expect(page.locator('pre.debug')).toContainText('screen: off');
 });

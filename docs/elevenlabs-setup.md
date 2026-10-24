@@ -61,7 +61,7 @@ The broadcaster picks **Female** or **Male** in the extension to match the speak
    testing on Free; before the first event (which needs Starter anyway), switch to their suggested replacements,
    e.g. Sarah → _Talia – Warm Soft Guide_, Brian → _Sawyer – Midnight Storyteller_ (full table:
    [What are Default voices?](https://elevenlabs.io/docs/help-center/product/voices/my-voices/what-are-default-voices)).
-   Switching is only new voice IDs: re-run `scripts/supabase-setup.sh --tts`; no code changes.
+   Switching is only new voice IDs: run `scripts/tts-update.sh` (§7); no code changes.
 2. Open the voice's menu and **Copy voice ID**. Voice IDs are not secret.
 3. Do the same for a **calm male US English** voice.
 4. Note both IDs next to the key in your password manager, labelled female and male.
@@ -164,8 +164,10 @@ Maintenance:
   ```sh
   supabase db query --linked "update private.tts_settings set enabled = false"
   ```
-- **Replace a leaked key:** delete it under **Developers → API Keys**, create a new one (step 2), run
-  `scripts/supabase-setup.sh --tts`. The old key stops working at once.
+- **Replace the key or switch voices:** `scripts/tts-update.sh`. It shows the current voice IDs, asks for a new key
+  and/or new voice IDs (Enter keeps each one), tries them with ElevenLabs first (about 100 credits per voice, and it
+  plays them), then saves them. No redeploy: the next spoken line uses them, even mid-broadcast. For a leaked key,
+  create the new one first (step 2), run the script, then delete the old one under **Developers → API Keys**.
 - **Downgrade after the event:** you can return to Free between events; TTS will then stop when the 10 000 credits run
   out, and text is unaffected.
 
@@ -183,5 +185,5 @@ Maintenance:
 | Button on, but silence                                                      | Phone muted / silent switch; audio blocked until a tap; screen locked                                                                                     | Unmute, tap the button again, keep the screen on                                                                                    |
 | Silence, and `tts_jobs` shows `failed`                                      | ElevenLabs error (key, credits, voice)                                                                                                                    | Read `error` in `private.tts_jobs`; fix per the rows above                                                                          |
 | Silence, and `tts_jobs` shows `skipped / no_listeners` though a phone is on | Heartbeat not reaching Supabase                                                                                                                           | Check the phone's network; toggle off and on                                                                                        |
-| Wrong voice gender                                                          | Voice selector in the extension popup, or the female/male IDs swapped in setup                                                                            | Switch it in the popup; or re-run `scripts/supabase-setup.sh --tts` with the IDs in the right order                                 |
+| Wrong voice gender                                                          | Voice selector in the extension popup, or the female/male IDs swapped in setup                                                                            | Switch it in the popup; or run `scripts/tts-update.sh` with the IDs in the right order                                              |
 | Speech lags far behind                                                      | Expected: one line behind (~2 s after the next line appears, or ~5 s after a pause); older lines are dropped if more than 2 wait                          | Nothing to fix unless lag keeps growing; report with the time and session title                                                     |

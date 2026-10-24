@@ -104,6 +104,7 @@ export function wakeLock(onStatus: (status: WakeStatus) => void = () => {}) {
     }
     try {
       await video.play();
+      if (!wanted) return void video.pause(); // the broadcast ended while starting it
       onStatus(`video (${why})`);
     } catch (e) {
       onStatus(`off: ${why}; video refused (${e instanceof Error ? e.name : String(e)})`);
@@ -120,6 +121,12 @@ export function wakeLock(onStatus: (status: WakeStatus) => void = () => {}) {
     requesting = true;
     try {
       lock = await navigator.wakeLock.request('screen');
+      if (!wanted) {
+        // the broadcast ended while asking
+        void lock.release();
+        lock = null;
+        return;
+      }
       lock.addEventListener('release', () => {
         lock = null;
         onStatus('released');
