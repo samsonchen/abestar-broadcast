@@ -30,7 +30,7 @@ say "Looking for project \"$NAME\""
 REF=$(sbjson projects list 2>/dev/null | jq -r --arg n "$NAME" '.projects[] | select(.name == $n) | .ref' | head -1) ||
   die 'Not logged in. Run `supabase login` in a normal Terminal window first.'
 [[ -n $REF ]] || die "No project named $NAME; run scripts/supabase-setup.sh --tts first."
-query() { supabase --agent no db query --project-ref "$REF" "$1"; }
+query() { supabase --agent no db query --linked --project-ref "$REF" "$1"; }
 show_voices() { query "select lang, voice, voice_id, enabled from private.tts_voices order by lang, voice"; }
 
 say 'Current voices'
