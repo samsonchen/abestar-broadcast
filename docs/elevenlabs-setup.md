@@ -54,6 +54,11 @@ The broadcaster picks **Female** or **Male** in the extension to match the speak
    better than a character voice for translation. **On the Free plan, only ElevenLabs' default voices work over the
    API** (in **Voices**, filter by **Default**); Voice Library voices return `402 paid_plan_required` until you
    upgrade to Starter or higher.
+   **Default voices expire on 2026-12-31** and are offered only to accounts created before March 2026. Use them for
+   testing on Free; before the first event (which needs Starter anyway), switch to their suggested replacements,
+   e.g. Sarah → _Talia – Warm Soft Guide_, Brian → _Sawyer – Midnight Storyteller_ (full table:
+   [What are Default voices?](https://elevenlabs.io/docs/help-center/product/voices/my-voices/what-are-default-voices)).
+   Switching is only new voice IDs: re-run `scripts/supabase-setup.sh --tts`; no code changes.
 2. Open the voice's menu and **Copy voice ID**. Voice IDs are not secret.
 3. Do the same for a **calm male US English** voice.
 4. Note both IDs next to the key in your password manager, labelled female and male.
@@ -141,6 +146,7 @@ Add to the "Before an event" checklist in `supabase-setup.md`:
 
 - [ ] Plan is Starter or higher and enough credits remain (the popup's credits line or the ElevenLabs **Usage** page;
       budget ~55 000 characters per hour of talk with listeners).
+- [ ] The voices are not ElevenLabs Default voices (they stop working after 2026-12-31; §3).
 - [ ] Tick **Offer read-aloud to viewers** when starting the broadcast (it is off for every new broadcast).
 - [ ] A 1-minute test broadcast speaks on your own phone.
 
