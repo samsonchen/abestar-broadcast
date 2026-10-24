@@ -3,7 +3,7 @@
 // State lives in memory and is written through to session storage after every change, so a worker that
 // Chrome stops and restarts picks up the broadcast, epoch and unsent lines where it left off.
 
-import type { CaptureMessage } from '@abestar/shared';
+import type { CaptureMessage, Voice } from '@abestar/shared';
 import type {
   Broadcast,
   BroadcastState,
@@ -11,6 +11,7 @@ import type {
   StartReply,
   Status,
   ToContent,
+  TtsReply,
 } from '../messages';
 import { IDLE_STATE } from '../messages';
 import type { Api } from './api';
@@ -19,6 +20,8 @@ export interface QueueItem {
   epoch: number;
   seq: number;
   text: string;
+  /** Absent in queues saved by 0.1.x. */
+  lang?: string | null;
 }
 
 export interface Store {
@@ -60,7 +63,13 @@ export class Broadcaster {
     return this.state;
   }
 
-  async start(opts: { tabId: number; title: string; force: boolean }): Promise<StartReply> {
+  async start(opts: {
+    tabId: number;
+    title: string;
+    force: boolean;
+    tts: boolean;
+    voice: Voice;
+  }): Promise<StartReply> {
     await this.ready;
     if (this.state.broadcast) return { ok: false, error: 'busy' };
     const token = await this.deps.getToken();
@@ -68,7 +77,13 @@ export class Broadcaster {
     if (!(await this.deps.tell(opts.tabId, { kind: 'ping' })))
       return { ok: false, error: 'not-abestar' };
 
-    const res = await this.deps.api.startSession(token, opts.title, opts.force);
+    const res = await this.deps.api.startSession(
+      token,
+      opts.title,
+      opts.force,
+      opts.tts,
+      opts.voice,
+    );
     if (!res.ok) {
       if (res.error === 'session-live') return { ok: false, error: 'session-live' };
       if (res.error === 'invalid-token') return { ok: false, error: 'invalid-token' };
@@ -79,6 +94,8 @@ export class Broadcaster {
       sessionId: res.value.id,
       pin: res.value.pin,
       title: opts.title,
+      tts: opts.tts,
+      voice: opts.voice,
       tabId: opts.tabId,
       epoch: 0,
       startedAt: Date.now(),
@@ -103,6 +120,19 @@ export class Broadcaster {
     await this.deps.tell(broadcast.tabId, { kind: 'stop' });
     this.queue = [];
     await this.update({ ...IDLE_STATE });
+  }
+
+  /** Turns read-aloud on or off, or switches its voice (e.g. for a second presenter), while live. */
+  async setTts(on: boolean, voice: Voice): Promise<TtsReply> {
+    await this.ready;
+    const { broadcast } = this.state;
+    if (!broadcast) return { ok: true }; // remembered by the popup for the next start
+    const token = await this.deps.getToken();
+    if (!token) return { ok: false, message: 'No broadcast token' };
+    const res = await this.deps.api.setSessionTts(token, broadcast.sessionId, on, voice);
+    if (!res.ok) return { ok: false, message: res.message };
+    await this.update({ broadcast: { ...broadcast, tts: on, voice } });
+    return { ok: true };
   }
 
   /** The presenter acknowledged that the broadcast was ended elsewhere. */
@@ -131,7 +161,12 @@ export class Broadcaster {
       else if (message.status === 'ok' && this.state.status !== 'reconnecting')
         await this.update({ status: 'live' });
     } else {
-      const item = { epoch: broadcast.epoch, seq: message.seq, text: message.text };
+      const item = {
+        epoch: broadcast.epoch,
+        seq: message.seq,
+        text: message.text,
+        lang: message.lang,
+      };
       const i = this.queue.findIndex((q) => q.epoch === item.epoch && q.seq === item.seq);
       // Not yet sent: only the newest text matters.
       if (i > 0 || (i === 0 && !this.flushing)) this.queue[i] = item;
@@ -165,6 +200,7 @@ export class Broadcaster {
         item.epoch,
         item.seq,
         item.text,
+        item.lang ?? null,
       );
       if (res.ok) {
         this.queue.shift();

@@ -15,6 +15,15 @@
 
     <form id="idle" hidden>
       <label>Title <input id="title" required maxlength="200" /></label>
+      <fieldset class="tts">
+        <legend>Read-aloud</legend>
+        <label><input type="checkbox" id="tts-idle" /> Offer read-aloud to viewers (English)</label>
+        <div class="voices">
+          <span class="muted">Voice (match the speaker):</span>
+          <label><input type="radio" name="voice-idle" value="female" /> Female</label>
+          <label><input type="radio" name="voice-idle" value="male" /> Male</label>
+        </div>
+      </fieldset>
       <button id="start" type="submit" class="primary">Start broadcast</button>
       <p id="start-error" class="error" role="alert"></p>
     </form>
@@ -30,9 +39,20 @@
         <button id="fullscreen">Fullscreen QR</button>
       </div>
       <p id="counts" class="muted"></p>
+      <fieldset class="tts">
+        <legend>Read-aloud</legend>
+        <label><input type="checkbox" id="tts-live" /> Offer read-aloud to viewers (English)</label>
+        <div class="voices">
+          <span class="muted">Voice:</span>
+          <label><input type="radio" name="voice-live" value="female" /> Female</label>
+          <label><input type="radio" name="voice-live" value="male" /> Male</label>
+        </div>
+      </fieldset>
       <p id="live-error" class="error" role="alert"></p>
       <button id="end" class="danger">End broadcast</button>
     </section>
+
+    <p id="credits" class="muted credits" hidden></p>
 
     <section id="ended" hidden>
       <p id="ended-text" class="error"></p>

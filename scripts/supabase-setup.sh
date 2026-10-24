@@ -3,8 +3,9 @@
 #
 # Prerequisites: a Supabase account and `supabase login` (run it in a normal Terminal window).
 #
-# Usage: scripts/supabase-setup.sh [--new-token] [--yes]
+# Usage: scripts/supabase-setup.sh [--new-token] [--tts] [--yes]
 #   --new-token  replace the broadcast token (e.g. after a leak); the old one stops working
+#   --tts        also set up read-aloud: ElevenLabs key, voices, Edge Function (docs/elevenlabs-setup.md)
 #   --yes        apply auth config changes without asking
 #
 # Environment: SUPABASE_DB_PASSWORD   database password of an existing project (asked for if unset)
@@ -16,10 +17,12 @@ cd "$(dirname "$0")/.."
 NAME=abestar-broadcast
 REGION=us-west-2
 NEW_TOKEN=false
+TTS=false
 ASSUME_YES=false
 for arg in "$@"; do
   case $arg in
     --new-token) NEW_TOKEN=true ;;
+    --tts) TTS=true ;;
     --yes) ASSUME_YES=true ;;
     *) echo "Unknown option: $arg" >&2; exit 2 ;;
   esac
@@ -134,8 +137,64 @@ check 'email sign-up is disabled' \
   "$(http -X POST "$URL/auth/v1/signup" -d '{"email":"setup-check@example.com","password":"Xx-123456789"}')" 400
 check 'realtime publishes segments and sessions' \
   "$(query "select count(*) || ' tables' as n from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename in ('segments', 'sessions')" | grep -o '[0-9]* tables' | head -1)" '2 tables'
-check 'auto-end job is scheduled' \
-  "$(query "select 'jobs:' || count(*) as n from cron.job where jobname in ('auto-end-idle-sessions', 'prune')" | grep -o 'jobs:[0-9]*' | head -1)" 'jobs:2'
+check 'scheduled jobs auto-end, prune and tts-flush' \
+  "$(query "select 'jobs:' || count(*) as n from cron.job where jobname in ('auto-end-idle-sessions', 'prune', 'tts-flush')" | grep -o 'jobs:[0-9]*' | head -1)" 'jobs:3'
+
+# ---------------------------------------------------------------- 6. read-aloud (--tts)
+if [[ $TTS == true ]]; then
+  say 'Setting up read-aloud (ElevenLabs)'
+  # Secret names, whatever the shape of the CLI's JSON.
+  secret_names() { sbjson secrets list --project-ref "$REF" | jq -r '[.. | objects | select(has("name")) | .name]'; }
+  HAS_KEY=$(secret_names | jq -r 'index("ELEVENLABS_API_KEY") != null')
+  read -rsp "ElevenLabs API key$([[ $HAS_KEY == true ]] && echo ' (Enter keeps the current one)'): " XI_KEY
+  echo
+  [[ -n $XI_KEY || $HAS_KEY == true ]] || die 'An ElevenLabs API key is needed; see docs/elevenlabs-setup.md §2.'
+  read -rp 'Female voice ID (Enter keeps the current one): ' VOICE_FEMALE
+  read -rp 'Male voice ID (Enter keeps the current one): ' VOICE_MALE
+  for v in "$VOICE_FEMALE" "$VOICE_MALE"; do
+    [[ -z $v || $v =~ ^[A-Za-z0-9]+$ ]] || die "Not a voice ID: $v"
+  done
+
+  # A fresh shared secret for the database → function calls; nobody needs to see it.
+  FN_SECRET=$(openssl rand -hex 32)
+  ENV_FILE=$(mktemp)
+  trap 'rm -f "$ENV_FILE"' EXIT
+  {
+    echo "TTS_FUNCTION_SECRET=$FN_SECRET"
+    echo "PUBLISHABLE_KEY=$KEY"
+    [[ -z $XI_KEY ]] || echo "ELEVENLABS_API_KEY=$XI_KEY"
+  } >"$ENV_FILE"
+  sb secrets set --project-ref "$REF" --env-file "$ENV_FILE" >/dev/null
+  rm -f "$ENV_FILE"
+  unset XI_KEY
+
+  say 'Deploying the Edge Functions tts and tts-credits'
+  sb functions deploy tts --project-ref "$REF" --no-verify-jwt --use-api
+  sb functions deploy tts-credits --project-ref "$REF" --no-verify-jwt --use-api
+
+  query "delete from vault.secrets where name = 'tts_function_secret';
+    select vault.create_secret('$FN_SECRET', 'tts_function_secret');" >/dev/null
+  unset FN_SECRET
+  [[ -z $VOICE_FEMALE ]] || query "insert into private.tts_voices (lang, voice, voice_id, language_code)
+    values ('en', 'female', '$VOICE_FEMALE', 'en')
+    on conflict (lang, voice) do update set voice_id = excluded.voice_id, enabled = true" >/dev/null
+  [[ -z $VOICE_MALE ]] || query "insert into private.tts_voices (lang, voice, voice_id, language_code)
+    values ('en', 'male', '$VOICE_MALE', 'en')
+    on conflict (lang, voice) do update set voice_id = excluded.voice_id, enabled = true" >/dev/null
+  query "update private.tts_settings set enabled = true, function_url = '$URL/functions/v1/tts'" >/dev/null
+
+  say 'Verifying read-aloud'
+  SECRETS=$(secret_names | jq -r 'map(select(. == "ELEVENLABS_API_KEY" or . == "TTS_FUNCTION_SECRET")) | length')
+  check 'function secrets ELEVENLABS_API_KEY and TTS_FUNCTION_SECRET are set' "$SECRETS" 2
+  check 'function tts refuses calls without the secret' \
+    "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$URL/functions/v1/tts" -d '{}')" 401
+  check 'function tts-credits refuses calls without the broadcast token' \
+    "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$URL/functions/v1/tts-credits" -d '{}')" 401
+  check 'English voices female and male are enabled' \
+    "$(query "select 'voices:' || count(*) as n from private.tts_voices where lang = 'en' and enabled" | grep -o 'voices:[0-9]*' | head -1)" 'voices:2'
+  check 'read-aloud is switched on' \
+    "$(query "select 'tts:' || enabled as n from private.tts_settings" | grep -o 'tts:[a-z]*' | head -1)" 'tts:true'
+fi
 
 if [[ $FAIL == 0 ]]; then
   say 'Done. Commit shared/public-config.json, then follow docs/supabase-setup.md from "Install the extension".'

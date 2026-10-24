@@ -1,5 +1,6 @@
 // Renders the transcript and status into index.html: cards, revision marks, auto-scroll and the "New lines" pill.
-import type { Segment } from '@abestar/shared';
+import type { Segment, Session } from '@abestar/shared';
+import { lineKey, type LineKey } from './audio-queue';
 import { revisionParts } from './diff';
 import type { Status, View } from './live';
 import type { Change } from './transcript';
@@ -27,11 +28,16 @@ const scrollToBottom = (smooth: boolean) =>
     behavior: smooth && !matchMedia('(prefers-reduced-motion: reduce)').matches ? 'smooth' : 'auto',
   });
 
-export function domView(lang: string | null, onStatus: (status: Status) => void): View {
+export function domView(
+  lang: string | null,
+  on: { status(status: Status): void; session(session: Session): void },
+): View & { speaking(line: LineKey | null): void } {
   const lines = byId<HTMLOListElement>('lines');
   const pill = byId<HTMLButtonElement>('new-lines');
   const status = byId('status');
   const rows = new Map<Segment, HTMLLIElement>();
+  const byLine = new Map<LineKey, HTMLLIElement>();
+  let speaking: HTMLLIElement | null = null;
 
   window.addEventListener('scroll', () => {
     if (atBottom()) pill.hidden = true;
@@ -64,6 +70,7 @@ export function domView(lang: string | null, onStatus: (status: Status) => void)
           render(li, change.segment);
           lines.insertBefore(li, lines.children[change.index] ?? null);
           rows.set(change.segment, li);
+          byLine.set(lineKey(change.segment), li);
         } else {
           const li = rows.get(change.segment);
           if (!li) continue;
@@ -84,7 +91,15 @@ export function domView(lang: string | null, onStatus: (status: Status) => void)
         byId('ended').hidden = false;
         byId('empty').hidden = true;
       }
-      onStatus(next);
+      on.status(next);
+    },
+    session(session: Session) {
+      on.session(session);
+    },
+    speaking(line: LineKey | null) {
+      speaking?.classList.remove('speaking');
+      speaking = line === null ? null : (byLine.get(line) ?? null);
+      speaking?.classList.add('speaking');
     },
     idle(idle: boolean) {
       byId('idle').hidden = !idle;

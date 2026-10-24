@@ -23,7 +23,7 @@ You end up with three values:
 | Broadcast token                           | **No**  | your password manager, and pasted once into the extension's options |
 
 Never share or commit the **database password** or the **secret / service_role key** (`sb_secret_…`). This project
-does not use the secret key at all.
+does not use the secret key at all, read-aloud included.
 
 ## 2. What you do by hand
 
@@ -103,14 +103,14 @@ To broadcast: open the Abestar presentation page, click the extension icon, **St
 
 The script checks, against the hosted project:
 
-| Check                                               | Expected |
-| --------------------------------------------------- | -------- |
-| Reading `sessions` without signing in               | HTTP 401 |
-| `start_session` with a wrong token                  | HTTP 401 |
-| Anonymous sign-in                                   | HTTP 200 |
-| Email sign-up                                       | HTTP 400 |
-| Realtime publishes `segments` and `sessions`        | 2 tables |
-| Scheduled jobs `auto-end-idle-sessions` and `prune` | 2 jobs   |
+| Check                                                         | Expected |
+| ------------------------------------------------------------- | -------- |
+| Reading `sessions` without signing in                         | HTTP 401 |
+| `start_session` with a wrong token                            | HTTP 401 |
+| Anonymous sign-in                                             | HTTP 200 |
+| Email sign-up                                                 | HTTP 400 |
+| Realtime publishes `segments` and `sessions`                  | 2 tables |
+| Scheduled jobs `auto-end-idle-sessions`, `prune`, `tts-flush` | 3 jobs   |
 
 After M3/M4, also check by hand: start a broadcast on the mock page, scan the QR code with a phone, see lines appear,
 end the broadcast, and see "Broadcast ended" on the phone.
@@ -122,6 +122,7 @@ end the broadcast, and see "Broadcast ended" on the phone.
       this takes a few minutes.
 - [ ] The broadcast token is pasted in the extension options on the presenting laptop.
 - [ ] A 1-minute test broadcast reaches your own phone.
+- [ ] With read-aloud: the checklist in `elevenlabs-setup.md` §7.
 
 ## 7. Maintenance
 

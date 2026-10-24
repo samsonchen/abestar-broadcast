@@ -31,6 +31,8 @@ export type Status = 'connecting' | 'live' | 'reconnecting' | 'offline' | 'ended
 
 export interface View {
   status(status: Status): void;
+  /** The session row as last read or pushed, e.g. when read-aloud becomes available. */
+  session(session: Session): void;
   changes(changes: Change[]): void;
   idle(idle: boolean): void;
 }
@@ -70,6 +72,7 @@ export class LiveSession {
     this.unsubscribe = this.backend.subscribe(this.session.id, {
       segment: (row) => this.apply([row]),
       session: (row) => {
+        this.view.session(row);
         if (row.status === 'ended') this.end();
       },
       attached: () => {
@@ -110,6 +113,7 @@ export class LiveSession {
             this.transcript.lastUpdatedAt,
           );
           this.fetchFailed = false;
+          if (session) this.view.session(session);
           this.apply(segments);
           if (!session || session.status === 'ended') return this.end();
         } catch {

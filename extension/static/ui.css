@@ -37,7 +37,36 @@ label {
   display: block;
   margin-bottom: 10px;
 }
-input:not([type='checkbox']),
+fieldset.tts {
+  margin: 0 0 12px;
+  padding: 0;
+  border: 0;
+}
+fieldset.tts legend {
+  padding: 0;
+  margin-bottom: 4px;
+}
+fieldset.tts label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+}
+.voices {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 16px;
+  margin-top: 4px;
+}
+.voices[hidden] {
+  display: none;
+}
+.credits {
+  margin: 8px 0 0;
+  font-size: 12px;
+}
+input:not([type='checkbox'], [type='radio']),
 textarea {
   display: block;
   width: 100%;

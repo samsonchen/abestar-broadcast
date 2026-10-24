@@ -6,6 +6,8 @@
   "include": [
     "fixtures/**/*.ts",
     "supabase/test/**/*.ts",
+    "supabase/unit/**/*.ts",
+    "supabase/functions/tts/lib.ts",
     "vitest.config.ts",
     "playwright.config.ts"
   ]

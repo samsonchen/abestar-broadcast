@@ -2,7 +2,7 @@
 
 import { DEFAULT_DEBOUNCE_MS, effectiveConfig, type Settings } from '../config';
 import type { BroadcastState, Status, ToBackground, ToContent } from '../messages';
-import { supabaseApi } from './api';
+import { fetchCredits, supabaseApi } from './api';
 import { Broadcaster, type QueueItem } from './broadcaster';
 
 const settings = () => chrome.storage.local.get() as Promise<Settings>;
@@ -24,6 +24,8 @@ const broadcaster = new Broadcaster({
       supabaseApi(effectiveConfig(await settings())).startSession(...args),
     upsertSegment: async (...args) =>
       supabaseApi(effectiveConfig(await settings())).upsertSegment(...args),
+    setSessionTts: async (...args) =>
+      supabaseApi(effectiveConfig(await settings())).setSessionTts(...args),
     endSession: async (...args) =>
       supabaseApi(effectiveConfig(await settings())).endSession(...args),
   },
@@ -64,6 +66,13 @@ chrome.runtime.onMessage.addListener((message: ToBackground, sender, reply) => {
         return null;
       case 'start':
         return broadcaster.start(message);
+      case 'tts':
+        return broadcaster.setTts(message.on, message.voice);
+      case 'credits': {
+        const { token, ...rest } = await settings();
+        if (!token) return { ok: false, missing: false, message: 'no token' };
+        return fetchCredits(effectiveConfig(rest), token);
+      }
       case 'end':
         await broadcaster.end();
         return null;

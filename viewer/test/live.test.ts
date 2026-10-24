@@ -45,6 +45,7 @@ let idle: boolean[];
 function follow() {
   const live = new LiveSession(fake.backend, SESSION, {
     status: (s) => statuses.push(s),
+    session: () => {},
     changes: () => {},
     idle: (i) => idle.push(i),
   });

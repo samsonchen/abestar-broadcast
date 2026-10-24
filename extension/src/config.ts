@@ -1,3 +1,5 @@
+import type { Voice } from '@abestar/shared';
+
 // Build-time configuration, injected by build.mjs (`prod` from shared/public-config.json, or `local`).
 
 export interface ExtensionConfig {
@@ -23,7 +25,11 @@ export interface Settings {
   debounceMs?: number;
   /** The popup's title field, remembered across broadcasts. */
   lastTitle?: string;
+  /** The popup's read-aloud voice, remembered across broadcasts. */
+  voice?: Voice;
 }
+
+export const DEFAULT_VOICE: Voice = 'female';
 
 export const DEFAULT_DEBOUNCE_MS = 400;
 

@@ -33,7 +33,9 @@ jobs:
         with:
           version: latest
       - run: npm ci
-      - run: supabase start -x studio,imgproxy,mailpit,edge-runtime,logflare,vector,supavisor,storage-api,postgres-meta
+      # Local Edge Function settings (ElevenLabs stub); read by `supabase start`.
+      - run: cp supabase/functions/.env.example supabase/functions/.env
+      - run: supabase start -x studio,imgproxy,mailpit,logflare,vector,supavisor,storage-api,postgres-meta
       - run: supabase db lint --local --level warning
       - run: npm run test:db
       - run: npx playwright install --with-deps chromium

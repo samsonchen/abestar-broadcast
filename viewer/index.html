@@ -15,11 +15,21 @@
         <span id="status" class="status" data-status="connecting">Connecting…</span>
       </div>
       <div class="tools">
+        <button id="tts" type="button" aria-pressed="false" aria-label="Read aloud" hidden>
+          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+            <path d="M4 9v6h4l5 4V5L8 9H4z" fill="currentColor" />
+            <path class="waves" d="M16 8.5a4.5 4.5 0 0 1 0 7M18.5 6a8 8 0 0 1 0 12" />
+            <path class="mute" d="M16 9l6 6M22 9l-6 6" />
+          </svg>
+        </button>
         <button id="smaller" type="button" aria-label="Smaller text">A−</button>
         <button id="larger" type="button" aria-label="Larger text">A+</button>
         <button id="theme" type="button" aria-label="Theme: automatic">◐</button>
       </div>
     </header>
+    <p id="tts-hint" class="tts-hint" role="status" hidden>
+      Read-aloud on. Keep this page open with the screen on; earphones recommended.
+    </p>
 
     <main>
       <p id="empty" class="note">Waiting for the first line…</p>

@@ -22,23 +22,27 @@ function memoryStore(): Store & { data: { state?: BroadcastState; queue?: QueueI
 
 function fakeApi() {
   const written: { epoch: number; seq: number; text: string }[] = [];
+  const langs: (string | null)[] = [];
   let failures: ApiResult<null>[] = [];
   const api = {
     startSession: vi.fn<Api['startSession']>(async () => ({
       ok: true,
       value: { id: 'session-1', pin: '482913' },
     })),
-    upsertSegment: vi.fn<Api['upsertSegment']>(async (_t, _s, epoch, seq, text) => {
+    upsertSegment: vi.fn<Api['upsertSegment']>(async (_t, _s, epoch, seq, text, lang) => {
       const failure = failures.shift();
       if (failure) return failure;
       written.push({ epoch, seq, text });
+      langs.push(lang);
       return { ok: true, value: null };
     }),
+    setSessionTts: vi.fn<Api['setSessionTts']>(async () => ({ ok: true, value: null })),
     endSession: vi.fn<Api['endSession']>(async () => ({ ok: true, value: null })),
   };
   return {
     api,
     written,
+    langs,
     failNext: (...results: ApiResult<null>[]) => (failures = results),
   };
 }
@@ -67,7 +71,9 @@ function worker(overrides: Partial<Deps> = {}) {
 }
 
 async function live(b = worker()) {
-  expect(await b.start({ tabId: TAB, title: 'Talk', force: false })).toEqual({
+  expect(
+    await b.start({ tabId: TAB, title: 'Talk', force: false, tts: true, voice: 'female' }),
+  ).toEqual({
     ok: true,
   });
   return b;
@@ -89,20 +95,29 @@ afterEach(() => vi.useRealTimers());
 describe('starting', () => {
   it('creates a session and tells the tab to capture', async () => {
     const b = await live();
-    expect(fake.api.startSession).toHaveBeenCalledWith('token', 'Talk', false);
+    expect(fake.api.startSession).toHaveBeenCalledWith('token', 'Talk', false, true, 'female');
     expect(told.at(-1)).toEqual({
       tabId: TAB,
       message: { kind: 'start', debounceMs: 400 },
     });
     expect(await b.getState()).toMatchObject({
       status: 'live',
-      broadcast: { sessionId: 'session-1', pin: '482913', tabId: TAB, epoch: 0 },
+      broadcast: {
+        sessionId: 'session-1',
+        pin: '482913',
+        tabId: TAB,
+        epoch: 0,
+        tts: true,
+        voice: 'female',
+      },
     });
   });
 
   it('needs a token', async () => {
     token = undefined;
-    expect(await worker().start({ tabId: TAB, title: 'T', force: false })).toEqual({
+    expect(
+      await worker().start({ tabId: TAB, title: 'T', force: false, tts: false, voice: 'female' }),
+    ).toEqual({
       ok: false,
       error: 'no-token',
     });
@@ -113,6 +128,8 @@ describe('starting', () => {
       tabId: 99,
       title: 'T',
       force: false,
+      tts: false,
+      voice: 'female',
     });
     expect(reply).toEqual({ ok: false, error: 'not-abestar' });
     expect(fake.api.startSession).not.toHaveBeenCalled();
@@ -121,15 +138,20 @@ describe('starting', () => {
   it('reports a live session elsewhere, and starts with force', async () => {
     fake.api.startSession.mockResolvedValueOnce({ ok: false, error: 'session-live', message: '' });
     const b = worker();
-    const opts = { tabId: TAB, title: 'T' };
-    expect(await b.start({ ...opts, force: false })).toEqual({ ok: false, error: 'session-live' });
+    const opts = { tabId: TAB, title: 'T', tts: false, voice: 'male' } as const;
+    expect(await b.start({ ...opts, force: false, tts: false, voice: 'female' })).toEqual({
+      ok: false,
+      error: 'session-live',
+    });
     expect(await b.start({ ...opts, force: true })).toEqual({ ok: true });
-    expect(fake.api.startSession).toHaveBeenLastCalledWith('token', 'T', true);
+    expect(fake.api.startSession).toHaveBeenLastCalledWith('token', 'T', true, false, 'male');
   });
 
   it('allows only one broadcasting tab', async () => {
     const b = await live();
-    expect(await b.start({ tabId: OTHER_TAB, title: 'T', force: false })).toEqual({
+    expect(
+      await b.start({ tabId: OTHER_TAB, title: 'T', force: false, tts: false, voice: 'female' }),
+    ).toEqual({
       ok: false,
       error: 'busy',
     });
@@ -265,5 +287,67 @@ describe('page and session lifecycle', () => {
     expect(fake.api.endSession).toHaveBeenCalledWith('token', 'session-1');
     expect(told.at(-1)).toEqual({ tabId: TAB, message: { kind: 'stop' } });
     expect(await b.getState()).toMatchObject({ status: 'idle', broadcast: null });
+  });
+});
+
+describe('read-aloud (docs/tts-plan.md §7)', () => {
+  it('sends each line with its language', async () => {
+    const b = await live();
+    await b.capture(TAB, line(1, 'Hello.'));
+    await b.capture(TAB, { kind: 'segment', seq: 2, text: 'No lang.', lang: null });
+    await b.flush();
+    expect(fake.langs).toEqual(['en-US', null]);
+  });
+
+  it('sends a line queued by 0.1.x, which has no language, with none', async () => {
+    store.data.state = {
+      broadcast: {
+        sessionId: 'session-1',
+        pin: '1',
+        title: 'T',
+        tabId: TAB,
+        epoch: 0,
+        startedAt: 0,
+      },
+      status: 'live',
+      sent: 0,
+      queued: 1,
+      lastError: null,
+    };
+    store.data.queue = [{ epoch: 0, seq: 1, text: 'Old.' }];
+    await worker().flush();
+    expect(fake.langs).toEqual([null]);
+  });
+
+  it('switches the voice of a live broadcast', async () => {
+    const b = await live();
+    expect(await b.setTts(true, 'male')).toEqual({ ok: true });
+    expect(fake.api.setSessionTts).toHaveBeenCalledWith('token', 'session-1', true, 'male');
+    expect((await b.getState()).broadcast).toMatchObject({ tts: true, voice: 'male' });
+  });
+
+  it('turns read-aloud off and on while live', async () => {
+    const b = await live();
+    expect(await b.setTts(false, 'female')).toEqual({ ok: true });
+    expect(fake.api.setSessionTts).toHaveBeenLastCalledWith('token', 'session-1', false, 'female');
+    expect((await b.getState()).broadcast?.tts).toBe(false);
+    expect(await b.setTts(true, 'female')).toEqual({ ok: true });
+    expect((await b.getState()).broadcast?.tts).toBe(true);
+  });
+
+  it('keeps read-aloud and the voice when the switch fails', async () => {
+    const b = await live();
+    fake.api.setSessionTts.mockResolvedValueOnce({
+      ok: false,
+      error: 'network',
+      message: 'down',
+    });
+    expect(await b.setTts(false, 'male')).toEqual({ ok: false, message: 'down' });
+    expect((await b.getState()).broadcast).toMatchObject({ tts: true, voice: 'female' });
+  });
+
+  it('needs no server call to change read-aloud while idle', async () => {
+    expect(await worker().setTts(true, 'male')).toEqual({ ok: true });
+    expect(fake.api.setSessionTts).not.toHaveBeenCalled();
   });
 });

@@ -48,7 +48,7 @@ Abestar page ──(content script reads DOM)──► Chrome extension ──(H
 
 ### Non-goals (v1)
 - Not broadcasting the source (speaker) column.
-- No audio, no re-translation, no editing of text.
+- No re-translation, no editing of text. (Audio: English read-aloud was added later; see `docs/tts-plan.md`.)
 - No changes to Abestar itself; we only read its DOM.
 
 ---

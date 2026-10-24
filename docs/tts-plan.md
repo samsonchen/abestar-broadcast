@@ -1,7 +1,8 @@
 # Text-to-speech (TTS) plan
 
-Written 2026-10-23. Status: **proposal, not implemented.** Once approved, this replaces the "No audio" non-goal in
-`PLAN.md` §1; everything else in `PLAN.md` still applies. The ElevenLabs account steps are in
+Written 2026-10-23. Status: **implemented 2026-10-24** (T1–T4 and the T5 script; the hosted setup and smoke test are
+the owner's steps). This replaces the "No audio" non-goal in `PLAN.md` §1; everything else in `PLAN.md` still
+applies. The ElevenLabs account steps are in
 [`elevenlabs-setup.md`](elevenlabs-setup.md).
 
 ## 0. Owner requirements (2026-10-23)
@@ -13,6 +14,13 @@ Written 2026-10-23. Status: **proposal, not implemented.** Once approved, this r
 | R3  | TTS is offered only when the target language is English. The design must allow more languages later without restructuring.                                                                           |
 | R4  | Speech runs **one line behind** the text, so a line is spoken only after the next line has appeared (it has had time to settle). A line that is revised after it was spoken is **not** spoken again. |
 | R5  | When no viewer has TTS on, no ElevenLabs call is made.                                                                                                                                               |
+
+Added 2026-10-24, after the first implementation:
+
+| #   | Requirement                                                                                                                                                |
+| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| R6  | The broadcaster decides whether read-aloud is offered at all: a checkbox in the extension, **off** by default (§7). Viewers see no toggle while it is off. |
+| R7  | Nice to have: the extension shows how many ElevenLabs credits remain (§7).                                                                                 |
 
 Owner answers (2026-10-24):
 
@@ -121,29 +129,38 @@ Today the content script captures each card's `lang` (`en-US`) but the backgroun
 
 ## 5. Database changes (`supabase/migrations/0002_tts.sql`)
 
-- `segments.lang text`, `sessions.tts_lang text`,
+- `segments.lang text`, `sessions.tts_on boolean not null default false` (R6), `sessions.tts_lang text` (null while
+  `tts_on` is false, so viewers hide their toggle),
   `sessions.tts_voice text not null default 'female' check (tts_voice in ('female', 'male'))`,
   `session_viewers.tts_until timestamptz`.
 - `private.tts_voices` (above); `private.tts_settings` (single row): `enabled` (global kill switch, default false
   until setup is done), `quiet_flush_seconds` (3), `function_url`.
 - `private.tts_jobs`: `(session_id, epoch, seq)` PK, `status` (`queued` | `done` | `skipped` | `failed`),
-  `skip_reason` (`no_listeners` | `language` | `stale` | `disabled`), `released_by` (`next_line` | `pause`), `voice`,
+  `skip_reason` (`no_listeners` | `language` | `stale` | `off` | `disabled`), `released_by` (`next_line` | `pause`), `voice`,
   `text_version`, `chars`, `created_at`, `finished_at`, `error`. Cascades with the session. It is the usage record
   for cost tracking.
 - `private.tts_enqueue(session_id, epoch, seq)`: applies §2–§4, inserts the job (`on conflict do nothing`), and for a
-  `queued` job calls `net.http_post` to the function with the job key. `pg_net` sends after the transaction commits,
-  so `upsert_segment` stays as fast as it is now.
+  `queued` job calls `net.http_post` to the function with everything it needs (text, neighbouring lines, voice ID,
+  model, language code). `pg_net` sends after the transaction commits, so `upsert_segment` stays as fast as it is
+  now. A line without a language (extension before 0.2.0) uses the session's `target_lang`.
+- The trigger catches every TTS error, so read-aloud can never break the text path.
 - `AFTER INSERT` trigger on `segments` → `tts_enqueue` for the predecessor. Revisions (`UPDATE`) do nothing.
 - `pg_cron` job `tts-flush`, every second (`'1 seconds'`) → pause flush (§2.4). It is one indexed query on the live
   session. Running every second writes ~86 000 rows a day to `cron.job_run_details`, so `private.prune()` also
   deletes run details older than a day.
 - `upsert_segment` gains `p_lang`; drop and re-create it with the new signature and grant.
-- `start_session` gains `p_voice text default 'female'`; same drop/re-create.
-- New broadcaster RPC `set_session_voice(p_token, p_session_id, p_voice)` to switch voice during a live session
-  (e.g. a second presenter). It applies from the next line spoken.
+- `start_session` gains `p_voice text default 'female'` and `p_tts boolean default false`; same drop/re-create.
+- New broadcaster RPC `set_session_tts(p_token, p_session_id, p_on, p_voice)` to turn read-aloud on or off and switch
+  the voice during a live session (e.g. a second presenter). It applies from the next line released; lines released
+  while off are recorded as `skipped / off`.
+- `check_broadcast_token(p_token)`, granted to `anon`, for the Edge Function `tts-credits` (§7).
 - `set_tts` RPC, granted to `authenticated`.
 - RLS on `realtime.messages`: a joined viewer of a **live** session may `select` (receive) on topic
   `tts:<session_id>`; nobody may `insert` (send) from a client.
+- `tts_deliver(p_secret, …, p_part, p_parts, p_audio, p_chars)` and `tts_fail(p_secret, …, p_error)`, called by
+  the Edge Function with the publishable key and the shared secret. `tts_deliver` pushes the clip with
+  `realtime.send(…, 'audio', 'tts:<session_id>', private => true)` and completes the job on the last part; it sends
+  nothing for a job that is not queued or a session that has ended.
 - Secrets in Supabase Vault: `tts_function_secret` (shared with the Edge Function, see §6). `function_url` is not
   secret.
 
@@ -152,20 +169,20 @@ Today the content script captures each card's `lang` (`en-US`) but the backgroun
 - `verify_jwt = false`; the request must carry `x-tts-secret` equal to the `TTS_FUNCTION_SECRET` function secret,
   which `pg_net` reads from Vault. Anything else gets 401.
 - Steps:
-  1. Load the job, the line (latest text), the previous line and the next line, and the voice row for the line's
-     language and the session's `tts_voice` at that moment (recorded in the job). Uses the
-     service-role key that Supabase provides to functions; it is never sent to a client.
+  1. Read the job from the request body: the line's text, the previous and next lines, and the voice chosen at
+     release time (the database recorded the voice in the job).
   2. Split the text into chunks of at most 400 characters on sentence boundaries (about 25 s of audio each), so every
      Realtime message stays well under the 256 KB limit.
   3. For each chunk: `POST https://api.elevenlabs.io/v1/text-to-speech/{voice_id}?output_format=mp3_22050_32` with
      `model_id`, `language_code`, and `previous_text` / `next_text` for smoother intonation. The one-line lag means
      `next_text` is already known.
-  4. Send each chunk on the topic `tts:<session_id>` through Realtime's REST broadcast endpoint, with
-     `private: true`, event `audio`.
-  5. Mark the job `done` with `chars`, or `failed` with the error. There is no retry: late audio is worthless.
-- `ELEVENLABS_API_KEY` and `ELEVENLABS_BASE_URL` (default `https://api.elevenlabs.io`) come from function secrets.
-  Local development and tests point `ELEVENLABS_BASE_URL` at a stub that returns a fixture MP3, so tests spend no
-  credits.
+  4. Hand each clip to `tts_deliver` as soon as it is ready; the database sends it on `tts:<session_id>`. This needs
+     only the publishable key, so neither the function nor anyone else uses the secret/service-role key.
+  5. On any error call `tts_fail`. There is no retry: late audio is worthless.
+- `ELEVENLABS_API_KEY`, `TTS_FUNCTION_SECRET`, `PUBLISHABLE_KEY` and `ELEVENLABS_BASE_URL` (default
+  `https://api.elevenlabs.io`) come from function secrets. Locally they come from `supabase/functions/.env` (copied
+  from `.env.example`), which points `ELEVENLABS_BASE_URL` at `supabase/functions/elevenlabs-stub`: it returns a short
+  beep, 401 for a wrong key and 500 for text containing `TTS-FAIL`, so tests spend no credits.
 - Pure parts (chunking, payload building) in `supabase/functions/tts/lib.ts`, unit-tested with Vitest. `index.ts`
   stays thin, like the extension's `index.ts` files.
 
@@ -189,10 +206,17 @@ export interface TtsClip {
 
 - `api.ts` / `broadcaster.ts`: carry `lang` from the capture message to `upsert_segment`. The persisted queue item
   gets a `lang` field (old queued items without it send null).
-- **Voice selector (D1)** in the popup, next to the title: "Voice: Female / Male" (two-option switch). Remembered
-  like the title (`chrome.storage`), default Female. Sent with `start_session`; changing it during a live broadcast
-  calls `set_session_voice`. Shown even when the target language is not English, since the language is only known
-  after the first line; a note says "Used for English read-aloud".
+- **Read-aloud checkbox (R6)** in the popup, under the title: "Offer read-aloud to viewers (English)". Unticked for
+  every new broadcast (not remembered), sent with `start_session`, and switchable while live (`set_session_tts`).
+- **Voice selector (D1)**, shown while the checkbox is ticked: Female / Male. Remembered (`chrome.storage`), default
+  Female. Sent with `start_session`; changing it while live calls `set_session_tts`. Shown even when the target
+  language is not English, since the language is only known after the first line.
+- **Credits line (R7)** under the form: "ElevenLabs: 8,766 of 10,000 credits left, resets Jan 15", fetched once each
+  time the popup opens. The extension never holds the ElevenLabs key: it calls the Edge Function `tts-credits` with
+  the broadcast token; the function checks the token (`check_broadcast_token`) and reads ElevenLabs
+  `GET /v1/user/subscription` (`character_count`, `character_limit`, `next_character_count_reset_unix`), which needs
+  the key's **User** permission. These are the account's credits, not the key's own quota, which the API does not
+  report. Hidden when the function is not deployed; "unavailable" on other errors.
 - Version 0.2.0.
 
 ## 8. Viewer changes
@@ -218,14 +242,13 @@ export interface TtsClip {
 
 | Value                      | Secret? | Where                                                                                     |
 | -------------------------- | ------- | ----------------------------------------------------------------------------------------- |
-| ElevenLabs API key         | **Yes** | password manager; `supabase secrets set ELEVENLABS_API_KEY` (function secret)             |
+| ElevenLabs API key         | **Yes** | password manager; function secret `ELEVENLABS_API_KEY` (set by the setup script)          |
 | TTS function secret        | **Yes** | generated by `scripts/supabase-setup.sh`; Vault + function secret; nobody needs to see it |
 | Voice IDs, model, language | No      | `private.tts_voices` (setup script; `seed.sql` for local)                                 |
 | Kill switch, pause flush   | No      | `private.tts_settings`                                                                    |
 
-`docs/supabase-setup.md` §1 currently says the project does not use the secret key. The Edge Function uses the
-service-role key that Supabase injects into functions; that sentence must be updated to say no person or client uses
-it.
+No part of the system uses the secret/service-role key: the function talks to the database through `tts_deliver` and
+`tts_fail`, which check the shared secret.
 
 ## 10. Cost and limits
 
@@ -249,18 +272,21 @@ it.
   counts as zero; unsupported or null `lang` → `skipped/language`; kill switch; stale; pause flush after 3 s and not
   before (`released_by`); `set_tts` rejected for non-joined viewers and ended sessions; `realtime.messages` policy
   (joined viewer may receive, others may not, nobody may send); `tts_lang` follows `target_lang`; `start_session`
-  voice default and check; `set_session_voice` needs the token and changes the voice of later jobs only; fallback to
-  the other voice kind.
+  voice default and check; read-aloud off by default, `set_session_tts` needs the token, clears `tts_lang` when off,
+  skips lines as `off`, and changes the voice of later jobs only; fallback to the other voice kind.
 - **Vitest**: chunker; audio queue (ordering, out-of-order arrival, drop policy, now-playing events); extension
-  `lang` pass-through and voice choice (remembered, sent on start, `set_session_voice` on change); viewer toggle
+  `lang` pass-through, read-aloud switch and voice (sent on start, `set_session_tts` on change); viewer toggle
   visibility from `tts_lang`; speaking marker follows now-playing.
 - **Integration** (`supabase/test`, local stack with `edge-runtime` and the ElevenLabs stub): insert two lines with
   one listener → one clip arrives on the topic; no listener → no call to the stub.
-- **Playwright**: toggle hidden for a non-English session, shown for English; turning it on receives a clip (stub).
+- **Playwright**: toggle hidden while the broadcaster has read-aloud off and for a non-English session, shown for
+  English, and follows the broadcaster switching it off and on; turning it on receives a clip (stub). Extension:
+  checkbox off by default, voice choice appears with it, credits line from the stub, live switch.
+- **Integration**: `tts-credits` returns the stub's balance for the broadcast token and 401 without it.
 - **Manual, hosted**: one real talk segment on the Abestar test page with 2 phones, one with TTS on.
 
-Local stack: drop `edge-runtime` from the `supabase start -x` list in `CLAUDE.md`; `supabase functions serve` for
-development.
+Local stack: `edge-runtime` is no longer in the `supabase start -x` list, and `supabase/functions/.env` must exist
+before `supabase start` (`CLAUDE.md`; CI copies `.env.example`).
 
 ## 12. Milestones
 
@@ -277,15 +303,16 @@ against the hosted project, the hosted smoke test.
 
 ## 13. Risks
 
-| Risk                                                                             | Mitigation                                                                                                                            |
-| -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| Credits run out mid-talk                                                         | ElevenLabs key credit quota (no per-session cap, D3); "before an event" check of remaining credits; text keeps working when TTS fails |
-| 3 s pause flush speaks a line before a late revision                             | Cards were not seen changing after settling; `released_by` shows how often the flush fires; raise `quiet_flush_seconds` if needed     |
-| `tts-flush` running every second fills `cron.job_run_details`                    | `private.prune()` deletes run details older than a day                                                                                |
-| Speech drifts behind the text                                                    | One-line lag only; queue drops old lines when > 2 wait                                                                                |
-| Phones stop audio when locked / iOS needs a tap                                  | Toggle is the tap; wake lock; hint text. A locked-screen stream (HLS) is out of scope                                                 |
-| Heartbeat lost, credits spent for nobody                                         | Listener expires after 90 s                                                                                                           |
-| A line longer than one message allows                                            | Chunking at 400 characters                                                                                                            |
-| ElevenLabs outage or slow response                                               | Job marked `failed`; text unaffected; no retries                                                                                      |
-| Text is sent to a third party (ElevenLabs keeps history on non-Enterprise plans) | Mention to presenters; same text is already public to the audience                                                                    |
-| Free plan is non-commercial and requires attribution                             | Use Starter or higher for real events (`elevenlabs-setup.md` §1)                                                                      |
+| Risk                                                                                                                     | Mitigation                                                                                                                            |
+| ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Credits run out mid-talk                                                                                                 | ElevenLabs key credit quota (no per-session cap, D3); "before an event" check of remaining credits; text keeps working when TTS fails |
+| 3 s pause flush speaks a line before a late revision                                                                     | Cards were not seen changing after settling; `released_by` shows how often the flush fires; raise `quiet_flush_seconds` if needed     |
+| `tts-flush` running every second fills `cron.job_run_details`                                                            | `private.prune()` deletes run details older than a day                                                                                |
+| Speech drifts behind the text                                                                                            | One-line lag only; queue drops old lines when > 2 wait                                                                                |
+| Phones stop audio when locked / iOS needs a tap                                                                          | Toggle is the tap; wake lock; hint text. A locked-screen stream (HLS) is out of scope                                                 |
+| Heartbeat lost, credits spent for nobody                                                                                 | Listener expires after 90 s                                                                                                           |
+| A line longer than one message allows                                                                                    | Chunking at 400 characters                                                                                                            |
+| Clips pass through `realtime.messages` (`realtime.send`) and stay there until Realtime drops old partitions (a few days) | About 15 MB per hour of talk with listeners, stored once whatever the audience size; small against the free plan's 500 MB database    |
+| ElevenLabs outage or slow response                                                                                       | Job marked `failed`; text unaffected; no retries                                                                                      |
+| Text is sent to a third party (ElevenLabs keeps history on non-Enterprise plans)                                         | Mention to presenters; same text is already public to the audience                                                                    |
+| Free plan is non-commercial and requires attribution                                                                     | Use Starter or higher for real events (`elevenlabs-setup.md` §1)                                                                      |

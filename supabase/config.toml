@@ -419,3 +419,15 @@ enabled = true
 # formatted with uppercase keywords, indent 2, max width 180, trailing commas,
 # and column/key alignment. Set to "null" to emit raw, unformatted SQL.
 # format_options = "{\"keywordCase\":\"upper\",\"indent\":2,\"maxWidth\":180,\"commaStyle\":\"trailing\"}"
+
+# Called by the database (pg_net) with a shared secret, not by signed-in users (docs/tts-plan.md §6).
+[functions.tts]
+verify_jwt = false
+
+# Called by the extension with the broadcast token, which the function checks itself.
+[functions.tts-credits]
+verify_jwt = false
+
+# Local stand-in for ElevenLabs; never deployed.
+[functions.elevenlabs-stub]
+verify_jwt = false

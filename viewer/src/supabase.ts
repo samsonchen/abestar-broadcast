@@ -1,7 +1,9 @@
-// `Backend` over supabase-js: anonymous sign-in, join_session, reads under RLS, Postgres Changes.
-import type { Segment, Session } from '@abestar/shared';
+// `Backend` over supabase-js: anonymous sign-in, join_session, reads under RLS, Postgres Changes, and the
+// read-aloud channel and heartbeat (`TtsBackend`).
+import type { Segment, Session, TtsClip } from '@abestar/shared';
 import { createClient } from '@supabase/supabase-js';
 import type { Backend, JoinResult } from './live';
+import type { TtsBackend } from './tts';
 
 export interface Config {
   supabaseUrl: string;
@@ -11,7 +13,7 @@ export interface Config {
 /** Supabase's default `max_rows`, which the hosted project keeps; a shorter page is the last one. */
 const PAGE_ROWS = 1000;
 
-export function supabaseBackend(config: Config): Backend {
+export function supabaseBackend(config: Config): Backend & TtsBackend {
   // The anonymous session is kept in localStorage, so a reload rejoins as the same viewer.
   const sb = createClient(config.supabaseUrl, config.publishableKey, {
     auth: { storageKey: 'abestar-viewer-auth', detectSessionInUrl: false },
@@ -102,6 +104,21 @@ export function supabaseBackend(config: Config): Backend {
         .subscribe((status) => {
           if (status !== 'SUBSCRIBED') on.lost();
         });
+      return () => void sb.removeChannel(channel);
+    },
+
+    async setTts(sessionId, on) {
+      const { data, error } = await sb.rpc('set_tts', { p_session_id: sessionId, p_on: on });
+      if (error) throw error;
+      return data === true;
+    },
+
+    listen(sessionId, onClip) {
+      // Private: the server lets only joined viewers of a live session receive it.
+      const channel = sb
+        .channel(`tts:${sessionId}`, { config: { private: true } })
+        .on('broadcast', { event: 'audio' }, ({ payload }) => onClip(payload as TtsClip))
+        .subscribe();
       return () => void sb.removeChannel(channel);
     },
   };

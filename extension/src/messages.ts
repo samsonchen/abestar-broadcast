@@ -1,6 +1,6 @@
 // Messages between the extension's parts. Content → background capture messages are in @abestar/shared.
 
-import type { CaptureMessage } from '@abestar/shared';
+import type { CaptureMessage, Voice } from '@abestar/shared';
 
 /** Background → content script. */
 export type ToContent = { kind: 'ping' } | { kind: 'start'; debounceMs: number } | { kind: 'stop' };
@@ -9,7 +9,9 @@ export type ToContent = { kind: 'ping' } | { kind: 'start'; debounceMs: number }
 export type ToBackground =
   | { kind: 'hello' }
   | { kind: 'capture'; message: CaptureMessage }
-  | { kind: 'start'; tabId: number; title: string; force: boolean }
+  | { kind: 'start'; tabId: number; title: string; force: boolean; tts: boolean; voice: Voice }
+  | { kind: 'tts'; on: boolean; voice: Voice }
+  | { kind: 'credits' }
   | { kind: 'end' }
   | { kind: 'dismiss' };
 
@@ -20,6 +22,13 @@ export type StartError =
   'no-token' | 'invalid-token' | 'session-live' | 'busy' | 'not-abestar' | 'network';
 
 export type StartReply = { ok: true } | { ok: false; error: StartError; message?: string };
+
+export type TtsReply = { ok: true } | { ok: false; message: string };
+
+/** ElevenLabs credits of the account (not the API key's own quota). `missing`: read-aloud is not set up. */
+export type CreditsReply =
+  | { ok: true; used: number; limit: number; resetsAt: number | null }
+  | { ok: false; missing: boolean; message: string };
 
 export type Status =
   | 'idle'
@@ -34,6 +43,9 @@ export interface Broadcast {
   sessionId: string;
   pin: string;
   title: string;
+  /** Read-aloud on/off and voice; absent in state saved by 0.1.x. */
+  tts?: boolean;
+  voice?: Voice;
   tabId: number;
   epoch: number;
   startedAt: number;

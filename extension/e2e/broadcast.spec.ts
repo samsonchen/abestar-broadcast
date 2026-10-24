@@ -38,10 +38,17 @@ async function viewer(pin: string) {
     rows: async () => {
       const { data } = await sb
         .from('segments')
-        .select('epoch, seq, text')
+        .select('epoch, seq, text, lang')
         .order('epoch')
         .order('seq');
       return data ?? [];
+    },
+    session: async () => {
+      const { data } = await sb
+        .from('sessions')
+        .select('target_lang, tts_on, tts_lang, tts_voice')
+        .single();
+      return data;
     },
   };
 }
@@ -65,6 +72,16 @@ test('broadcasts the mock session, survives a reload, and ends', async ({
   await popup.goto(`chrome-extension://${extensionId}/popup.html?tab=${tabId}`);
   await expect(popup.locator('#title')).toHaveValue(/^Talk \d{4}-\d{2}-\d{2}$/); // nothing typed yet
   await popup.locator('#title').fill('Weekly sync');
+  // Read-aloud is off until ticked; the voice choice appears with it.
+  await expect(popup.locator('#tts-idle')).not.toBeChecked();
+  await expect(popup.locator('input[name="voice-idle"][value="female"]')).toBeHidden();
+  await popup.locator('#tts-idle').check();
+  await expect(popup.locator('input[name="voice-idle"][value="female"]')).toBeChecked();
+  await popup.locator('input[name="voice-idle"][value="male"]').check();
+  // The ElevenLabs balance, from the local stub through the Edge Function `tts-credits`.
+  await expect(popup.locator('#credits')).toHaveText(
+    'ElevenLabs: 8,766 of 10,000 credits left, resets Jan 15',
+  );
   await popup.locator('#start').click();
   await expect(popup.locator('#status')).toHaveText('● Live');
   const pin = (await popup.locator('#pin').textContent())?.trim() ?? '';
@@ -86,6 +103,25 @@ test('broadcasts the mock session, survives a reload, and ends', async ({
       'Healthy and flexible for brisk walking, or enhanced maintenance for joint degeneration warnings.',
       'Pet joint health self-assessment form.',
     ]);
+  expect((await audience.rows()).every((r) => r.lang === 'en-US')).toBe(true);
+  expect(await audience.session()).toEqual({
+    target_lang: 'en-US',
+    tts_on: true,
+    tts_lang: 'en',
+    tts_voice: 'male',
+  });
+
+  // A second presenter takes over: switch the read-aloud voice while live.
+  await expect(popup.locator('input[name="voice-live"][value="male"]')).toBeChecked();
+  await popup.locator('input[name="voice-live"][value="female"]').check();
+  await expect.poll(async () => (await audience.session())?.tts_voice).toBe('female');
+  // …and turn read-aloud off and back on.
+  await expect(popup.locator('#tts-live')).toBeChecked();
+  await popup.locator('#tts-live').uncheck();
+  await expect.poll(async () => (await audience.session())?.tts_lang).toBeNull();
+  await expect(popup.locator('input[name="voice-live"][value="female"]')).toBeHidden();
+  await popup.locator('#tts-live').check();
+  await expect.poll(async () => (await audience.session())?.tts_lang).toBe('en');
   const firstEpoch = (await audience.rows())[0]?.epoch ?? -1;
   await expect(popup.locator('#counts')).toHaveText('4 lines sent');
 
@@ -109,4 +145,7 @@ test('broadcasts the mock session, survives a reload, and ends', async ({
   // The next broadcast offers the last title typed.
   await popup.reload();
   await expect(popup.locator('#title')).toHaveValue('Weekly sync');
+  await expect(popup.locator('#tts-idle')).not.toBeChecked(); // off again for every new broadcast
+  await popup.locator('#tts-idle').check();
+  await expect(popup.locator('input[name="voice-idle"][value="female"]')).toBeChecked();
 });

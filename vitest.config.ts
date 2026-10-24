@@ -24,6 +24,13 @@ export default defineConfig({
           environment: 'jsdom',
         },
       },
+      {
+        test: {
+          name: 'functions',
+          include: ['supabase/unit/**/*.test.ts'],
+          environment: 'node',
+        },
+      },
       // Needs the local Supabase stack, so it only runs via `npm run test:db`.
       ...(process.env.SUPABASE_IT
         ? [
@@ -33,6 +40,8 @@ export default defineConfig({
                 include: ['supabase/test/**/*.test.ts'],
                 environment: 'node',
                 testTimeout: 15_000,
+                // Each file starts its own broadcast, which ends any other.
+                fileParallelism: false,
                 hookTimeout: 15_000,
               },
             },

@@ -2,7 +2,9 @@
 import type { Session } from '@abestar/shared';
 import { setUpPreferences, wakeLock } from './device';
 import { type JoinResult, LiveSession } from './live';
+import { webAudioPlayer } from './player';
 import { supabaseBackend } from './supabase';
+import { Tts } from './tts';
 import { byId, domView } from './ui';
 
 const JOIN_ERRORS: Record<Exclude<JoinResult, { ok: true }>['error'], string> = {
@@ -51,15 +53,43 @@ function follow(session: Session) {
   byId('title').textContent = title;
   document.title = `${title} · Live translation`;
 
-  const live = new LiveSession(
-    backend,
-    session,
-    domView(session.target_lang, (status) => screen.set(status !== 'ended')),
-  );
+  // Read-aloud (docs/tts-plan.md §8): off on every load; the button shows only when the server offers it.
+  const ttsButton = byId<HTMLButtonElement>('tts');
+  const ttsHint = byId('tts-hint');
+  const offerTts = (row: Session) => {
+    // Absent (not just null) while the hosted database predates read-aloud.
+    const offered = row.status === 'live' && Boolean(row.tts_lang);
+    ttsButton.hidden = !offered;
+    if (!offered) tts.disable(row.status === 'live');
+  };
+
+  const view = domView(session.target_lang, {
+    status: (status) => {
+      screen.set(status !== 'ended');
+      if (status === 'ended') offerTts({ ...session, status: 'ended' });
+    },
+    session: offerTts,
+  });
+  const tts = new Tts(backend, session.id, webAudioPlayer(), {
+    active: (on) => {
+      ttsButton.setAttribute('aria-pressed', String(on));
+      ttsButton.setAttribute('aria-label', on ? 'Stop reading aloud' : 'Read aloud');
+      ttsHint.hidden = !on;
+    },
+    speaking: (line) => view.speaking(line),
+  });
+  ttsButton.addEventListener('click', () => tts.toggle());
+  window.addEventListener('pagehide', () => tts.disable());
+  offerTts(session);
+
+  const live = new LiveSession(backend, session, view);
   window.addEventListener('online', () => live.setOnline(true));
   window.addEventListener('offline', () => live.setOnline(false));
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') void live.resync();
+    if (document.visibilityState === 'visible') {
+      void live.resync();
+      tts.wake();
+    }
   });
   if (!navigator.onLine) live.setOnline(false);
   void live.start();

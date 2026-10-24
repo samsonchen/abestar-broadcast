@@ -7,15 +7,16 @@ import local from '../../shared/local-config.json' with { type: 'json' };
 const TOKEN = 'local-dev-token'; // seed.sql
 const VIEWER = local.viewerUrl;
 
-async function broadcast(title: string) {
+async function broadcast(title: string, { targetLang = 'en-US', tts = false } = {}) {
   const sb = createClient(local.supabaseUrl, local.publishableKey, {
     auth: { persistSession: false },
   });
   const { data, error } = await sb.rpc('start_session', {
     p_token: TOKEN,
     p_title: title,
-    p_target_lang: 'en-US',
+    p_target_lang: targetLang,
     p_force: true,
+    p_tts: tts,
   });
   if (error) throw error;
   const { id, pin } = data as { id: string; pin: string };
@@ -27,6 +28,7 @@ async function broadcast(title: string) {
     pin,
     line: (seq: number, text: string, epoch = 1) =>
       call('upsert_segment', { p_epoch: epoch, p_seq: seq, p_text: text }),
+    readAloud: (on: boolean) => call('set_session_tts', { p_on: on, p_voice: 'female' }),
     end: () => call('end_session', {}),
   };
 }
@@ -173,4 +175,70 @@ test('text size and theme are remembered, without horizontal scrolling', async (
     () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
   );
   expect(overflow).toBe(0);
+});
+
+test('read-aloud: offered when the broadcaster turns it on, for English only, off until tapped, marks the line being read', async ({
+  page,
+}) => {
+  // Count the clips that were decoded and started (the local ElevenLabs stub returns a short beep).
+  await page.addInitScript(() => {
+    const w = window as unknown as { played: number };
+    w.played = 0;
+    const start = AudioBufferSourceNode.prototype.start;
+    AudioBufferSourceNode.prototype.start = function (...args) {
+      if ((this.buffer?.length ?? 0) > 1) w.played++; // not the 1-sample unlock
+      return start.apply(this, args);
+    };
+  });
+  const played = () => page.evaluate(() => (window as unknown as { played: number }).played);
+
+  const plain = await broadcast('Plain talk'); // the broadcaster left read-aloud off
+  await plain.line(1, 'Good morning.');
+  await page.goto(`${VIEWER}?pin=${plain.pin}`);
+  await expect(lines(page)).toHaveCount(1);
+  await expect(page.locator('#tts')).toBeHidden();
+
+  const japanese = await broadcast('Japanese talk', { targetLang: 'ja-JP', tts: true });
+  await japanese.line(1, 'こんにちは。');
+  await page.goto(`${VIEWER}?pin=${japanese.pin}`);
+  await expect(lines(page)).toHaveCount(1);
+  await expect(page.locator('#tts')).toBeHidden();
+
+  const b = await broadcast('English talk', { tts: true });
+  await b.line(1, 'Good morning.');
+  await page.goto(`${VIEWER}?pin=${b.pin}`);
+  const button = page.locator('#tts');
+  await expect(button).toBeVisible();
+  await expect(button).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.locator('#tts-hint')).toBeHidden();
+
+  await button.click();
+  await expect(button).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#tts-hint')).toBeVisible();
+
+  // Line 2 is spoken once line 3 arrives (or after a 3 s pause).
+  await b.line(2, 'This line is read aloud.');
+  await b.line(3, 'And so is this one.');
+  await page.waitForFunction(() => document.querySelector('#lines > li.speaking') !== null, null, {
+    polling: 'raf',
+    timeout: 15_000,
+  });
+  await expect.poll(played, { timeout: 15_000 }).toBeGreaterThanOrEqual(1);
+
+  await button.click();
+  await expect(button).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.locator('#tts-hint')).toBeHidden();
+  await expect(page.locator('#lines > li.speaking')).toHaveCount(0);
+
+  // The broadcaster switches read-aloud off and on while live.
+  await button.click();
+  await b.readAloud(false);
+  await expect(button).toBeHidden();
+  await expect(page.locator('#tts-hint')).toBeHidden();
+  await b.readAloud(true);
+  await expect(button).toBeVisible();
+  await expect(button).toHaveAttribute('aria-pressed', 'false');
+
+  await b.end();
+  await expect(button).toBeHidden();
 });
