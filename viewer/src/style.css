@@ -309,6 +309,18 @@ dialog h2 {
 .primary:disabled {
   opacity: 0.6;
 }
+.choices {
+  display: grid;
+  gap: 10px;
+}
+.secondary {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: inherit;
+  background: var(--bg);
+}
 
 /* The blank video that keeps some phones awake (device.ts); playing but not seen. */
 .keep-awake {

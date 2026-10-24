@@ -10,8 +10,17 @@ import { byId, domView } from './ui';
 const TTS_HINT = 'Read-aloud on. Keep this page open with the screen on; earphones recommended.';
 const TTS_HINT_TAP = 'Tap anywhere on the page to resume read-aloud.';
 const ttsHintWaiting = (lang: string) =>
-  `Read-aloud paused: it continues when the translation is back in ${languageName(lang)}. ` +
-  'To listen in the new language, turn read-aloud off and on.';
+  `Read-aloud paused: it continues when the translation is in ${languageName(lang)}. ` +
+  'Tap the speaker to choose another language.';
+
+/** A language's name in itself, for the picker: English, 中文. */
+function nativeName(lang: string): string {
+  try {
+    return new Intl.DisplayNames([lang], { type: 'language' }).of(lang) ?? lang;
+  } catch {
+    return lang;
+  }
+}
 
 function languageName(lang: string): string {
   try {
@@ -34,7 +43,13 @@ const input = byId<HTMLInputElement>('pin');
 const error = byId('pin-error');
 const joinButton = byId<HTMLButtonElement>('join');
 const debug = debugLog();
-const screen = wakeLock((status) => debug(`screen: ${status}`));
+const awakeHint = byId('awake-hint');
+const screen = wakeLock(
+  (status) => debug(`screen: ${status}`),
+  (on) => (awakeHint.hidden = !on),
+);
+// Wanted from the start, so that the tap that enters the PIN takes it; released when the broadcast ends.
+screen.set(true);
 
 setUpPreferences();
 
@@ -99,7 +114,9 @@ function follow(session: Session) {
         ? ttsHintWaiting(waitingFor)
         : TTS_HINT;
   };
+  let latest = session;
   const offerTts = (row: Session) => {
+    latest = row;
     const live = row.status === 'live';
     debug(`language ${row.target_lang ?? '?'}, read-aloud ${row.tts_lang ?? 'not offered'}`);
     // The broadcaster's switch; tts_on is absent while the hosted database predates read-aloud.
@@ -107,8 +124,8 @@ function follow(session: Session) {
     if (!broadcasterOn) tts.disable(live);
     // Null while the translation is in a language without voices: a listener waits for theirs to return.
     tts.setLanguage(broadcasterOn ? row.tts_lang : null);
-    // Also shown while on and waiting, so that it can be turned off.
-    ttsButton.hidden = !(tts.enabled || (broadcasterOn && row.tts_lang));
+    // Shown while read-aloud is offered (the broadcaster has it on and there are voices), and while on.
+    ttsButton.hidden = !(tts.enabled || ttsChoices().length > 0);
   };
 
   const view = domView(session.target_lang, {
@@ -158,12 +175,73 @@ function follow(session: Session) {
       },
     },
   );
-  ttsButton.addEventListener('click', () => tts.toggle());
+  // The read-aloud languages with voices; fetched once, before the start dialog needs them.
+  let languages: string[] | null = null;
+  const languagesLoaded = backend
+    .ttsLanguages()
+    .then((list) => void (languages = list))
+    .catch(() => {});
+  /** The languages to offer now, the translation's current one first; none while the broadcaster has it off. */
+  const ttsChoices = (): string[] => {
+    const on = latest.status === 'live' && (latest.tts_on ?? Boolean(latest.tts_lang));
+    if (!on) return [];
+    const current = latest.tts_lang;
+    const all = languages ?? (current ? [current] : []); // null: a database from before the picker
+    return current && all.includes(current) ? [current, ...all.filter((l) => l !== current)] : all;
+  };
+
+  const startDialog = byId<HTMLDialogElement>('start-dialog');
+  const choice = (label: string, primary: boolean, action: () => void) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = primary ? 'primary' : 'secondary';
+    button.textContent = label;
+    // In the click itself: phones allow audio (and the wake lock) only during the tap.
+    button.addEventListener('click', () => {
+      startDialog.close();
+      action();
+    });
+    return button;
+  };
+  /**
+   * The start dialog. Its button is the tap a phone needs before it keeps the screen on or plays audio, and it picks
+   * the read-aloud language (or none). `joining`: on joining, where without read-aloud it is a "Tap to continue" if
+   * the screen still needs a tap; otherwise opened by the speaker button, which shows only while read-aloud is offered.
+   */
+  const openStart = (joining: boolean) => {
+    const langs = ttsChoices();
+    if (langs.length > 0) {
+      byId('start-title').textContent = 'Read aloud?';
+      byId('start-hint').textContent = 'Choose the language to hear; earphones recommended.';
+      const chosen = tts.language;
+      byId('start-choices').replaceChildren(
+        ...langs.map((lang) =>
+          choice(`${nativeName(lang)}${lang === chosen ? ' ✓' : ''}`, true, () =>
+            tts.listenIn(lang),
+          ),
+        ),
+        choice(`No read-aloud${!joining && !tts.enabled ? ' ✓' : ''}`, false, () => tts.disable()),
+      );
+    } else if (joining && screen.needsTap) {
+      byId('start-title').textContent = title;
+      byId('start-hint').textContent =
+        'Tap to start following the live translation with the screen kept on.';
+      byId('start-choices').replaceChildren(choice('Tap to continue', true, () => {}));
+    } else return;
+    debug(`start dialog: ${langs.join(', ') || 'continue'}`);
+    if (!startDialog.open) startDialog.showModal();
+  };
+  // The speaker button opens the same picker: another language, or no read-aloud.
+  ttsButton.addEventListener('click', () => openStart(false));
   // A tap anywhere lets the phone play audio again. Phones count a tap as a user gesture only when the finger
   // lifts (touchend; click elsewhere), not on pointerdown. Capture phase: before the button's own click.
   onTap(() => tts.tap());
   window.addEventListener('pagehide', () => tts.disable());
   offerTts(session);
+  void languagesLoaded.then(() => {
+    offerTts(latest);
+    openStart(true);
+  });
 
   const live = new LiveSession(backend, session, view);
   window.addEventListener('online', () => live.setOnline(true));

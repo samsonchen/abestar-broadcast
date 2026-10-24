@@ -71,20 +71,39 @@ export class Tts {
     return this.on;
   }
 
+  /** The language being listened for while on, else null. */
+  get language(): string | null {
+    return this.on ? this.wanted : null;
+  }
+
+  /** Turns read-aloud on in `lang`, or switches to it while on (the viewer picked another language). */
+  listenIn(lang: string): void {
+    if (!this.on) return this.enable(lang);
+    if (lang === this.wanted) return;
+    this.wanted = lang;
+    this.queue.clear(); // a clip of the old language may be playing
+    this.player.stop();
+    this.beat();
+    this.view.waiting(this.current !== null && this.current !== lang ? lang : null);
+  }
+
   toggle(): void {
     if (this.on) this.disable();
     else this.enable();
   }
 
-  enable(): void {
+  /** `lang`: the language picked in the start dialog; by default the translation's current one. */
+  enable(lang: string | null = this.current): void {
     if (this.on) return;
     this.on = true;
-    this.wanted = this.current;
+    this.wanted = lang;
     this.player.unlock();
     this.join();
     this.beat();
     this.heartbeat = setInterval(() => this.beat(), HEARTBEAT_MS);
     this.view.active(true);
+    // Before the first line there is no language yet; waiting starts when another one appears.
+    if (this.current !== null && this.current !== this.wanted) this.view.waiting(this.wanted);
   }
 
   /** `tellServer` is false when the session ended or the page is going away and the call cannot matter. */

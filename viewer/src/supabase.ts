@@ -13,7 +13,12 @@ export interface Config {
 /** Supabase's default `max_rows`, which the hosted project keeps; a shorter page is the last one. */
 const PAGE_ROWS = 1000;
 
-export function supabaseBackend(config: Config): Backend & TtsBackend {
+/** The read-aloud languages a viewer can pick (e.g. `['en', 'zh']`); null when the database predates them. */
+export interface TtsLanguages {
+  ttsLanguages(): Promise<string[] | null>;
+}
+
+export function supabaseBackend(config: Config): Backend & TtsBackend & TtsLanguages {
   // The anonymous session is kept in localStorage, so a reload rejoins as the same viewer.
   const sb = createClient(config.supabaseUrl, config.publishableKey, {
     auth: { storageKey: 'abestar-viewer-auth', detectSessionInUrl: false },
@@ -105,6 +110,11 @@ export function supabaseBackend(config: Config): Backend & TtsBackend {
           if (status !== 'SUBSCRIBED') on.lost();
         });
       return () => void sb.removeChannel(channel);
+    },
+
+    async ttsLanguages() {
+      const { data, error } = await sb.rpc('tts_languages');
+      return error || !Array.isArray(data) ? null : (data as string[]);
     },
 
     async setTts(sessionId, on, lang = null) {

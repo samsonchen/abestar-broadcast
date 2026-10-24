@@ -37,6 +37,10 @@ const lines = (page: Page) => page.locator('#lines > li');
 const status = (page: Page) => page.locator('#status');
 const pinError = (page: Page) => page.locator('#pin-error');
 const wrongPin = (pin: string) => (pin === '000000' ? '111111' : '000000');
+/** The buttons of the start dialog (shown on joining, and by the speaker button). */
+const choices = (page: Page) => page.locator('#start-dialog[open] button');
+const choose = (page: Page, name: string) =>
+  page.locator('#start-dialog[open]').getByRole('button', { name, exact: true }).click();
 
 test('follows a broadcast: history, live lines, revisions, reload', async ({ page }) => {
   const b = await broadcast('Quarterly review');
@@ -136,6 +140,7 @@ test('follows new lines at the bottom, and offers a pill after scrolling up', as
   const b = await broadcast('Scrolling');
   for (let seq = 1; seq <= 30; seq++) await b.line(seq, `Line number ${seq} of a long talk.`);
   await page.goto(`${VIEWER}?pin=${b.pin}`);
+  await choose(page, 'Tap to continue');
   await expect(lines(page)).toHaveCount(30);
   await expect(lines(page).last()).toBeInViewport();
 
@@ -157,6 +162,7 @@ test('text size and theme are remembered, without horizontal scrolling', async (
   const b = await broadcast('Preferences');
   await b.line(1, 'Readable from the back row.');
   await page.goto(`${VIEWER}?pin=${b.pin}`);
+  await choose(page, 'Tap to continue');
   const size = () =>
     lines(page)
       .first()
@@ -168,6 +174,7 @@ test('text size and theme are remembered, without horizontal scrolling', async (
   await page.click('#theme'); // auto → light
   await page.click('#theme'); // light → dark
   await page.reload();
+  await choose(page, 'Tap to continue');
   await expect.poll(size).toBe('24px');
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
 
@@ -177,7 +184,7 @@ test('text size and theme are remembered, without horizontal scrolling', async (
   expect(overflow).toBe(0);
 });
 
-test('read-aloud: offered when the broadcaster turns it on, for English only, off until tapped, marks the line being read', async ({
+test('read-aloud: picked on joining or with the speaker, follows the broadcaster, marks the line being read', async ({
   page,
 }) => {
   // Count the clips that were decoded and started (the local ElevenLabs stub returns a short beep).
@@ -195,24 +202,25 @@ test('read-aloud: offered when the broadcaster turns it on, for English only, of
   const plain = await broadcast('Plain talk'); // the broadcaster left read-aloud off
   await plain.line(1, 'Good morning.');
   await page.goto(`${VIEWER}?pin=${plain.pin}`);
-  await expect(lines(page)).toHaveCount(1);
-  await expect(page.locator('#tts')).toBeHidden();
-
-  const japanese = await broadcast('Japanese talk', { targetLang: 'ja-JP', tts: true });
-  await japanese.line(1, 'こんにちは。');
-  await page.goto(`${VIEWER}?pin=${japanese.pin}`);
+  await expect(choices(page)).toHaveText(['Tap to continue']); // the tap that keeps the screen on
+  await choose(page, 'Tap to continue');
   await expect(lines(page)).toHaveCount(1);
   await expect(page.locator('#tts')).toBeHidden();
 
   const b = await broadcast('English talk', { tts: true });
   await b.line(1, 'Good morning.');
   await page.goto(`${VIEWER}?pin=${b.pin}`);
+  // The translation's language first, then the others with voices (seed.sql: English and Chinese).
+  await expect(choices(page)).toHaveText(['English', '中文', 'No read-aloud']);
+  await choose(page, 'No read-aloud');
   const button = page.locator('#tts');
   await expect(button).toBeVisible();
   await expect(button).toHaveAttribute('aria-pressed', 'false');
   await expect(page.locator('#tts-hint')).toBeHidden();
 
-  await button.click();
+  await button.click(); // the speaker opens the same picker
+  await expect(choices(page)).toHaveText(['English', '中文', 'No read-aloud ✓']);
+  await choose(page, 'English');
   await expect(button).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('#tts-hint')).toBeVisible();
 
@@ -226,12 +234,15 @@ test('read-aloud: offered when the broadcaster turns it on, for English only, of
   await expect.poll(played, { timeout: 15_000 }).toBeGreaterThanOrEqual(1);
 
   await button.click();
+  await expect(choices(page)).toHaveText(['English ✓', '中文', 'No read-aloud']);
+  await choose(page, 'No read-aloud');
   await expect(button).toHaveAttribute('aria-pressed', 'false');
   await expect(page.locator('#tts-hint')).toBeHidden();
   await expect(page.locator('#lines > li.speaking')).toHaveCount(0);
 
   // The broadcaster switches read-aloud off and on while live.
   await button.click();
+  await choose(page, 'English');
   await b.readAloud(false);
   await expect(button).toBeHidden();
   await expect(page.locator('#tts-hint')).toBeHidden();
@@ -251,11 +262,11 @@ test('read-aloud waits while the translation is in another language, then carrie
   await page.goto(`${VIEWER}?pin=${b.pin}`);
   const button = page.locator('#tts');
   const hint = page.locator('#tts-hint');
-  await button.click();
+  await choose(page, 'English');
   await expect(hint).toContainText('Read-aloud on');
 
   await b.line(2, '各位早安。', 1, 'zh-TW'); // the presenter switched Abestar to Chinese
-  await expect(hint).toContainText('back in English');
+  await expect(hint).toContainText('is in English');
   await expect(button).toHaveAttribute('aria-pressed', 'true');
 
   await b.line(3, 'Back to English.', 1, 'en-US');
@@ -263,9 +274,9 @@ test('read-aloud waits while the translation is in another language, then carrie
   await expect(button).toHaveAttribute('aria-pressed', 'true');
 
   await b.line(4, '再一次中文。', 1, 'zh-TW');
-  await expect(hint).toContainText('back in English');
-  await button.click(); // off and on: now for Chinese
-  await button.click();
+  await expect(hint).toContainText('is in English');
+  await button.click(); // pick Chinese instead
+  await choose(page, '中文');
   await expect(hint).toContainText('Read-aloud on');
   await b.end();
 });

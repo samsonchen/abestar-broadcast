@@ -81,16 +81,25 @@ export type WakeStatus = string;
 /**
  * Keeps the screen on while wanted: the Screen Wake Lock API, else a playing blank video. Browsers drop both when the
  * page is hidden, so they are taken again when it is shown, and on any tap (some only allow it after one).
- * `?awake=video` uses the video only, to compare on a phone.
+ * `needsTap` is true while the lock was refused for want of a tap (iPhone Safari, e.g. when opened from a QR code
+ * or after unlocking the phone), so the page can ask for one. `?awake=video` uses the video only, to compare.
  */
-export function wakeLock(onStatus: (status: WakeStatus) => void = () => {}) {
+export function wakeLock(
+  onStatus: (status: WakeStatus) => void = () => {},
+  onNeedsTap: (on: boolean) => void = () => {},
+) {
   const videoOnly = new URLSearchParams(location.search).get('awake') === 'video';
   let wanted = false;
+  let tapNeeded = false;
+  const needsTap = (on: boolean) => {
+    tapNeeded = on;
+    onNeedsTap(on);
+  };
   let lock: WakeLockSentinel | null = null;
   let requesting = false;
   let video: HTMLVideoElement | null = null;
 
-  const playVideo = async (why: string) => {
+  const playVideo = async (why: string, tapped: boolean) => {
     if (!video) {
       video = document.createElement('video');
       video.muted = true;
@@ -107,6 +116,7 @@ export function wakeLock(onStatus: (status: WakeStatus) => void = () => {}) {
       if (!wanted) return void video.pause(); // the broadcast ended while starting it
       onStatus(`video (${why})`);
     } catch (e) {
+      needsTap(!tapped); // e.g. an in-app browser that plays video only after a tap
       onStatus(`off: ${why}; video refused (${e instanceof Error ? e.name : String(e)})`);
     }
   };
@@ -116,8 +126,8 @@ export function wakeLock(onStatus: (status: WakeStatus) => void = () => {}) {
     if (!wanted || lock || requesting || document.visibilityState !== 'visible') return;
     const videoPlaying = Boolean(video && !video.paused);
     if (videoPlaying && !tapped) return; // the video keeps going; a tap may still get the real lock
-    if (videoOnly) return playVideo('?awake=video');
-    if (!('wakeLock' in navigator)) return playVideo('no Wake Lock API');
+    if (videoOnly) return playVideo('?awake=video', tapped);
+    if (!('wakeLock' in navigator)) return playVideo('no Wake Lock API', tapped);
     requesting = true;
     try {
       lock = await navigator.wakeLock.request('screen');
@@ -127,6 +137,7 @@ export function wakeLock(onStatus: (status: WakeStatus) => void = () => {}) {
         lock = null;
         return;
       }
+      needsTap(false);
       lock.addEventListener('release', () => {
         lock = null;
         onStatus('released');
@@ -135,9 +146,11 @@ export function wakeLock(onStatus: (status: WakeStatus) => void = () => {}) {
       onStatus(`wake lock${tapped ? ' (after a tap)' : ''}`);
     } catch (e) {
       // e.g. Low Power Mode, low battery, or no gesture yet; the video may still work
+      // Only a tap can help with NotAllowedError; after a tap, a refusal is the phone's choice (Low Power Mode).
+      needsTap(!tapped && (e as { name?: unknown } | null)?.name === 'NotAllowedError');
       const why = `wake lock refused${tapped ? ' after a tap' : ''}: ${e instanceof Error ? `${e.name} ${e.message}` : String(e)}`;
       if (videoPlaying) onStatus(`video; ${why}`);
-      else await playVideo(why);
+      else await playVideo(why, tapped);
     } finally {
       requesting = false;
     }
@@ -146,11 +159,16 @@ export function wakeLock(onStatus: (status: WakeStatus) => void = () => {}) {
   document.addEventListener('visibilitychange', () => void acquire());
   onTap(() => void acquire(true));
   return {
+    /** The screen is not kept on until the page is tapped. */
+    get needsTap(): boolean {
+      return tapNeeded;
+    },
     set(on: boolean) {
       wanted = on;
       if (on) return void acquire();
       void lock?.release();
       video?.pause();
+      needsTap(false);
       onStatus('off');
     },
   };

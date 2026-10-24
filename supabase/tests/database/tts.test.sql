@@ -314,5 +314,20 @@ reset role;
 select pg_temp.line(6, 'Any language.', 'en-US');
 select is((pg_temp.job(5)).status, 'queued', 'a viewer without a language listens to every language');
 
+-- ---------------------------------------------------------------- languages to pick from
+set local role anon;
+select throws_ok($$select public.tts_languages()$$, '42501', null, 'anon cannot list the read-aloud languages');
+set local role authenticated;
+select is(public.tts_languages(), '{en,zh}', 'a viewer lists the languages with an enabled voice');
+reset role;
+update private.tts_voices set enabled = false where lang = 'zh';
+set local role authenticated;
+select is(public.tts_languages(), '{en}', 'a language whose voices are off is not offered');
+reset role;
+update private.tts_settings set enabled = false;
+set local role authenticated;
+select is(public.tts_languages(), '{}', 'none while read-aloud is switched off for everyone');
+reset role;
+
 select * from finish();
 rollback;

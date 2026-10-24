@@ -281,6 +281,21 @@ describe('Tts', () => {
     expect(fake.played).toEqual(['0:1:0']);
   });
 
+  it('switches language in place when the viewer picks another one', async () => {
+    tts.listenIn('en');
+    server.send(clip(1)); // playing
+    tts.listenIn('zh');
+    expect(fake.player.stopped).toBe(1);
+    expect(server.backend.setTts).toHaveBeenLastCalledWith(SESSION.id, true, 'zh');
+    expect(server.backend.setTts).not.toHaveBeenCalledWith(SESSION.id, false);
+    expect(waiting).toEqual(['zh']); // the translation is still in English
+    expect(tts.language).toBe('zh');
+    tts.setLanguage('zh');
+    expect(waiting).toEqual(['zh', null]);
+    server.send({ ...clip(2), lang: 'zh-TW' });
+    expect(fake.played).toEqual(['0:1:0', '0:2:0']);
+  });
+
   it('does not report language changes while off', () => {
     tts.setLanguage('zh');
     expect(waiting).toEqual([]);
