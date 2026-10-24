@@ -51,8 +51,9 @@ Docs: [API keys](https://elevenlabs.io/docs/overview/administration/workspaces/a
 The broadcaster picks **Female** or **Male** in the extension to match the speaker, so you need one voice of each.
 
 1. Open **Voices**. Pick a **calm female US English** voice that is clear at normal speed; a narration voice works
-   better than a character voice for translation. ElevenLabs' default voices work on every plan; some Voice Library
-   voices need a paid plan.
+   better than a character voice for translation. **On the Free plan, only ElevenLabs' default voices work over the
+   API** (in **Voices**, filter by **Default**); Voice Library voices return `402 paid_plan_required` until you
+   upgrade to Starter or higher.
 2. Open the voice's menu and **Copy voice ID**. Voice IDs are not secret.
 3. Do the same for a **calm male US English** voice.
 4. Note both IDs next to the key in your password manager, labelled female and male.
@@ -165,6 +166,7 @@ Maintenance:
 | --------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | Test in §4 returns `401`                                                    | Key mistyped, deleted, or `missing_permissions`                                                                                                           | Copy the key again; add the permission named in the error                                                                           |
 | Test returns `402` or `quota_exceeded`                                      | Plan credits or the key's credit quota used up                                                                                                            | Check **Usage**; raise the key quota or upgrade                                                                                     |
+| Test returns `402` `paid_plan_required`                                     | A Voice Library voice on the Free plan                                                                                                                    | Pick a default voice (§3), or upgrade to Starter                                                                                    |
 | Test returns `404` / `voice_not_found`                                      | Wrong voice ID, or a library voice your plan cannot use                                                                                                   | Copy the ID again; choose a default voice                                                                                           |
 | Test returns `429`                                                          | Too many requests at once (Free allows 2 concurrent)                                                                                                      | Wait and retry; upgrade if it happens during talks                                                                                  |
 | No speaker button on the viewer                                             | Read-aloud not ticked in the popup, target language not English, `tts_settings.enabled` false, no enabled `tts_voices` row, or extension older than 0.2.0 | Tick it in the popup; check `select tts_on, target_lang, tts_lang from public.sessions where status = 'live'`; update the extension |
