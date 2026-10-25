@@ -13,7 +13,7 @@ const clip = (seq: number, part = 0, parts = 1, epoch = 0): TtsClip => ({
   parts,
   lang: 'en-US',
   text_version: 1,
-  format: 'mp3_44100_64',
+  format: 'mp3_22050_32',
   audio: `${epoch}:${seq}:${part}`,
 });
 

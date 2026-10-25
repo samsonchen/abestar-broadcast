@@ -50,7 +50,7 @@ Extension ── start_session(…, voice) / upsert_segment(text, lang) ──�
                                               │   → record a tts_jobs row, pg_net POST (after commit, async)
                                               ▼
                                          Edge Function `tts`
-                                              │ ElevenLabs Flash v2.5 → MP3 (mp3_44100_64)
+                                              │ ElevenLabs Flash v2.5 → MP3 (mp3_22050_32)
                                               │ Realtime Broadcast, private topic `tts:<session_id>`
                                               ▼
 viewers with TTS on (subscribed to the topic) ── queue and play
@@ -173,9 +173,9 @@ Today the content script captures each card's `lang` (`en-US`) but the backgroun
 - Steps:
   1. Read the job from the request body: the line's text, the previous and next lines, and the voice chosen at
      release time (the database recorded the voice in the job).
-  2. Split the text into chunks of at most 200 characters (60 in Chinese or Japanese) on sentence boundaries (about
-     13 s of audio each), so every Realtime message stays well under the 256 KB limit.
-  3. For each chunk: `POST https://api.elevenlabs.io/v1/text-to-speech/{voice_id}?output_format=mp3_44100_64` with
+  2. Split the text into chunks of at most 400 characters (120 in Chinese or Japanese) on sentence boundaries (about
+     25 s of audio each), so every Realtime message stays well under the 256 KB limit.
+  3. For each chunk: `POST https://api.elevenlabs.io/v1/text-to-speech/{voice_id}?output_format=mp3_22050_32` with
      `model_id`, `language_code`, and `previous_text` / `next_text` for smoother intonation. The one-line lag means
      `next_text` is already known. A voice with a `speed` (Chinese: 1.1, as its default reads slower than the Voice
      Library preview) sends `voice_settings`: the voice's stored settings (read once per voice) with that speed.
@@ -200,7 +200,7 @@ export interface TtsClip {
   parts: number; // chunk index within the line
   lang: string;
   text_version: number;
-  format: 'mp3_44100_64';
+  format: 'mp3_22050_32';
   audio: string; // base64
 }
 ```
@@ -261,7 +261,7 @@ No part of the system uses the secret/service-role key: the function talks to th
   TTS on costs nothing.
 - Plan sizing is in [`elevenlabs-setup.md`](elevenlabs-setup.md) §1.
 - Supabase: Realtime Broadcast messages count against 2 M messages/month (one message per chunk per listener; ~40 ×
-  ~600 per hour-long talk ≈ 24 000). Audio volume ≈ 30 MB per listener-hour at 64 kbps. Edge Function: one
+  ~600 per hour-long talk ≈ 24 000). Audio volume ≈ 15 MB per listener-hour at 32 kbps. Edge Function: one
   invocation per spoken line, far inside 500 000/month. All fit the free plan.
 - No per-session cap (D3): a talk with listeners spends about 55 000 characters per hour, however long it runs. The
   key's credit quota stops spending when reached; text keeps working.
@@ -314,8 +314,8 @@ against the hosted project, the hosted smoke test.
 | Speech drifts behind the text                                                                                            | One-line lag only; queue drops old lines when > 2 wait                                                                                |
 | Phones stop audio when locked / iOS needs a tap                                                                          | Toggle is the tap; wake lock; hint text. A locked-screen stream (HLS) is out of scope                                                 |
 | Heartbeat lost, credits spent for nobody                                                                                 | Listener expires after 90 s                                                                                                           |
-| A line longer than one message allows                                                                                    | Chunking at 200 characters                                                                                                            |
-| Clips pass through `realtime.messages` (`realtime.send`) and stay there until Realtime drops old partitions (a few days) | About 30 MB per hour of talk with listeners, stored once whatever the audience size; small against the free plan's 500 MB database    |
+| A line longer than one message allows                                                                                    | Chunking at 400 characters                                                                                                            |
+| Clips pass through `realtime.messages` (`realtime.send`) and stay there until Realtime drops old partitions (a few days) | About 15 MB per hour of talk with listeners, stored once whatever the audience size; small against the free plan's 500 MB database    |
 | ElevenLabs outage or slow response                                                                                       | Job marked `failed`; text unaffected; no retries                                                                                      |
 | Text is sent to a third party (ElevenLabs keeps history on non-Enterprise plans)                                         | Mention to presenters; same text is already public to the audience                                                                    |
 | Free plan is non-commercial and requires attribution                                                                     | Use Starter or higher for real events (`elevenlabs-setup.md` §1)                                                                      |

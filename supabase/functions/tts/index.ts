@@ -16,7 +16,7 @@ import {
 } from './lib.ts';
 
 const SECRET = TTS_FUNCTION_SECRET;
-const FORMAT = 'mp3_44100_64';
+const FORMAT = 'mp3_22050_32';
 
 async function rpc(fn: 'tts_deliver' | 'tts_fail', args: Record<string, unknown>): Promise<void> {
   const res = await callRpc(fn, { p_secret: SECRET, ...args });

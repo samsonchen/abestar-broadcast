@@ -83,7 +83,7 @@ if [[ -n $TEST_KEY ]]; then
     jq -n --arg text "$(sample "$LANG_CODE")" --arg lang "$LANG_CODE" \
       '{text: $text, model_id: "eleven_flash_v2_5", language_code: $lang}' >"$OUT/body"
     CODE=$(curl -sS -o "$OUT/speech" -w '%{http_code}' \
-      "https://api.elevenlabs.io/v1/text-to-speech/$VOICE?output_format=mp3_44100_64" \
+      "https://api.elevenlabs.io/v1/text-to-speech/$VOICE?output_format=mp3_22050_32" \
       -H "xi-api-key: $TEST_KEY" -H 'Content-Type: application/json' --data-binary "@$OUT/body")
     [[ $CODE == 200 ]] || die "$LANG_CODE $KIND voice $VOICE refused: HTTP $CODE $(head -c 300 "$OUT/speech") (nothing was changed)"
     echo "  $(lang_name "$LANG_CODE"), $KIND: $VOICE OK, playing…"

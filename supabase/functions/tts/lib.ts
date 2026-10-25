@@ -23,12 +23,12 @@ export interface SpeechRequest {
 }
 
 /**
- * About 13 s of speech: at 64 kbps a clip stays near 105 KB, about 140 KB in base64, well under Realtime's 256 KB
+ * About 25 s of speech: at 32 kbps a clip stays near 100 KB, about 135 KB in base64, well under Realtime's 256 KB
  * message limit.
  */
-export const MAX_CHUNK = 200;
+export const MAX_CHUNK = 400;
 /** The same in Chinese or Japanese, spoken at about 5 characters a second against English's 15. */
-export const MAX_CJK_CHUNK = 60;
+export const MAX_CJK_CHUNK = 120;
 
 const CJK = /[\u3000-\u303f\u3400-\u9fff\uf900-\ufaff\uff00-\uffef]/;
 const CJK_ALL = new RegExp(CJK.source, 'g');

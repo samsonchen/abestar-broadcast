@@ -49,7 +49,7 @@ export interface TtsClip {
   parts: number;
   lang: string | null;
   text_version: number;
-  format: 'mp3_44100_64';
+  format: 'mp3_22050_32';
   /** Base64 MP3. */
   audio: string;
 }

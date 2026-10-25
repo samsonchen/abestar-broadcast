@@ -59,7 +59,7 @@ describe('chunkText', () => {
     expect(chunkText('第一句。第二句！', 5)).toEqual(['第一句。', '第二句！']);
   });
 
-  it('keeps Chinese chunks to about 13 s of speech, packed without spaces', () => {
+  it('keeps Chinese chunks to about 25 s of speech, packed without spaces', () => {
     const sentence = '台北市長選舉的開票結果將在今晚公布。'; // 18 characters
     const text = sentence.repeat(20);
     expect(maxChunk(text)).toBe(MAX_CJK_CHUNK);
