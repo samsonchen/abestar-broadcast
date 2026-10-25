@@ -9,6 +9,7 @@ import {
   isJob,
   MAX_CHUNK,
   speechRequests,
+  spokenText,
   type SpeechRequest,
   type TtsJob,
 } from '../functions/tts/lib';
@@ -96,6 +97,31 @@ describe('speechRequests', () => {
       { text: 'One one one.', previous_text: 'Good morning.', next_text: 'Two two two.' },
       { text: 'Two two two.', previous_text: 'One one one.', next_text: 'Three three.' },
       { text: 'Three three.', previous_text: 'Two two two.', next_text: null },
+    ]);
+  });
+});
+
+describe('spokenText', () => {
+  it('makes Chinese punctuation half-width and drops spaces next to Chinese characters', () => {
+    expect(spokenText('各位，早安。經文：約翰、羅馬；信嗎？是的！')).toBe(
+      '各位,早安.經文:約翰,羅馬;信嗎?是的!',
+    );
+    expect(spokenText('市長 蔣萬安 今天， 說 iPhone 15 很好。')).toBe(
+      '市長蔣萬安今天,說iPhone 15很好.',
+    );
+    expect(spokenText(JOB.text)).toBe(JOB.text);
+  });
+
+  it('is applied to every chunk and its context', () => {
+    const job = {
+      ...JOB,
+      text: '第一句。第二句。',
+      previous_text: '早安， 各位。',
+      next_text: '再見。',
+    };
+    expect(speechRequests(job, 4)).toEqual([
+      { text: '第一句.', previous_text: '早安,各位.', next_text: '第二句.' },
+      { text: '第二句.', previous_text: '第一句.', next_text: '再見.' },
     ]);
   });
 });

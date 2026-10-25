@@ -98,13 +98,34 @@ export function chunkText(text: string, max = maxChunk(text)): string[] {
   return chunks;
 }
 
+const HALF_WIDTH: Record<string, string> = {
+  '，': ',',
+  '、': ',',
+  '。': '.',
+  '；': ';',
+  '：': ':',
+  '！': '!',
+  '？': '?',
+};
+const SPACE_BY_CJK = new RegExp(`\\s+(?=${CJK.source})|(?<=${CJK.source})\\s+`, 'g');
+
+/**
+ * The text as ElevenLabs is given it: Chinese punctuation made half-width and spaces next to Chinese characters
+ * removed, as both make Chinese voices pause much longer (owner's listening test). Applied after chunking, which
+ * relies on the full-width punctuation.
+ */
+export function spokenText(text: string): string {
+  return text.replace(SPACE_BY_CJK, '').replace(/[，、。；：！？]/g, (p) => HALF_WIDTH[p] ?? p);
+}
+
 /** The ElevenLabs requests for a line: one per chunk, each with its neighbours as context. */
 export function speechRequests(job: TtsJob, max = maxChunk(job.text)): SpeechRequest[] {
-  const chunks = chunkText(job.text, max);
+  const chunks = chunkText(job.text, max).map(spokenText);
+  const context = (text: string | null | undefined) => (text ? spokenText(text) : null);
   return chunks.map((text, i) => ({
     text,
-    previous_text: i > 0 ? (chunks[i - 1] as string) : (job.previous_text ?? null),
-    next_text: i < chunks.length - 1 ? (chunks[i + 1] as string) : (job.next_text ?? null),
+    previous_text: i > 0 ? (chunks[i - 1] as string) : context(job.previous_text),
+    next_text: i < chunks.length - 1 ? (chunks[i + 1] as string) : context(job.next_text),
   }));
 }
 

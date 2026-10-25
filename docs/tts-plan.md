@@ -178,7 +178,9 @@ Today the content script captures each card's `lang` (`en-US`) but the backgroun
   3. For each chunk: `POST https://api.elevenlabs.io/v1/text-to-speech/{voice_id}?output_format=mp3_22050_32` with
      `model_id`, `language_code`, and `previous_text` / `next_text` for smoother intonation. The one-line lag means
      `next_text` is already known. A voice with a `speed` (Chinese: 1.1, as its default reads slower than the Voice
-     Library preview) sends `voice_settings`: the voice's stored settings (read once per voice) with that speed.
+     Library preview) sends `voice_settings`: the voice's stored settings (read once per voice) with that speed. Chinese
+     punctuation is sent half-width and spaces next to Chinese characters are dropped: both made Chinese voices pause
+     much longer. The text on screen is unchanged.
   4. Hand each clip to `tts_deliver` as soon as it is ready; the database sends it on `tts:<session_id>`. This needs
      only the publishable key, so neither the function nor anyone else uses the secret/service-role key.
   5. On any error call `tts_fail`. There is no retry: late audio is worthless.
