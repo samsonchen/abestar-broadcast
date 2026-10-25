@@ -76,6 +76,8 @@ select ok((select convert_from(body, 'utf8')::jsonb @> jsonb_build_object('seq',
     'model_id', 'eleven_flash_v2_5', 'next_text', 'The cat sat on the mat.')
     and headers @> '{"x-tts-secret": "test-secret"}'
   from net.http_request_queue order by id desc limit 1), 'the request carries the line, voice, context and secret');
+select is((select convert_from(body, 'utf8')::jsonb -> 'speed' from net.http_request_queue order by id desc limit 1),
+  'null'::jsonb, 'and no speed, keeping the voice''s own');
 select is((pg_temp.job(2)).status, null, 'the new line itself waits');
 
 select pg_temp.line(1, 'Good morning, everyone.');
@@ -264,9 +266,9 @@ select results_eq($$select tts_on, tts_lang from public.sessions where id = curr
   $$values (false, null::text)$$, 'read-aloud is off unless the broadcaster turns it on');
 
 -- ---------------------------------------------------------------- Chinese: one voice set for zh-TW and zh-CN
-insert into private.tts_voices (lang, voice, voice_id, language_code) values
-  ('zh', 'female', 'voice-zh-f', 'zh'),
-  ('zh', 'male', 'voice-zh-m', 'zh');
+insert into private.tts_voices (lang, voice, voice_id, language_code, speed) values
+  ('zh', 'female', 'voice-zh-f', 'zh', 1.1),
+  ('zh', 'male', 'voice-zh-m', 'zh', 1.1);
 set local role anon;
 select set_config('test.new', public.start_session('local-dev-token', 'Chinese talk', null, true, 'male', true)::text,
   true);
@@ -304,6 +306,8 @@ select is((pg_temp.job(3)).status, 'queued', 'it is for a Chinese listener');
 select is(pg_temp.requests(), current_setting('test.requests')::int + 1, 'and is sent to the Edge Function');
 select is((select convert_from(body, 'utf8')::jsonb ->> 'next_text' from net.http_request_queue order by id desc limit 1), null,
   'without the English line after it as context');
+select is((select (convert_from(body, 'utf8')::jsonb ->> 'speed')::numeric from net.http_request_queue order by id desc limit 1),
+  1.1, 'at the Chinese voices'' speed');
 select pg_temp.line(5, 'Still English.', 'en-US');
 select is((pg_temp.job(4)).skip_reason, 'no_listeners', 'an English line is not synthesized for a Chinese listener');
 

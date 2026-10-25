@@ -59,7 +59,7 @@ describe('chunkText', () => {
     expect(chunkText('第一句。第二句！', 5)).toEqual(['第一句。', '第二句！']);
   });
 
-  it('keeps Chinese chunks to about 25 s of speech, packed without spaces', () => {
+  it('keeps Chinese chunks to about 13 s of speech, packed without spaces', () => {
     const sentence = '台北市長選舉的開票結果將在今晚公布。'; // 18 characters
     const text = sentence.repeat(20);
     expect(maxChunk(text)).toBe(MAX_CJK_CHUNK);
@@ -115,6 +115,17 @@ describe('elevenLabsBody', () => {
       model_id: 'eleven_flash_v2_5',
     });
   });
+
+  it("sends a speed with the voice's stored settings", () => {
+    const job = { ...JOB, speed: 1.1 };
+    const stored = { stability: 0.4, similarity_boost: 0.8, speed: 0.9 };
+    expect(elevenLabsBody(job, speechRequests(job)[0] as SpeechRequest, stored)).toMatchObject({
+      voice_settings: { stability: 0.4, similarity_boost: 0.8, speed: 1.1 },
+    });
+    expect(
+      elevenLabsBody({ ...JOB, speed: null }, speechRequests(JOB)[0] as SpeechRequest, stored),
+    ).not.toHaveProperty('voice_settings');
+  });
 });
 
 describe('isJob', () => {
@@ -125,6 +136,8 @@ describe('isJob', () => {
     expect(isJob({ ...JOB, text: '' })).toBe(false);
     expect(isJob({ ...JOB, seq: '5' })).toBe(false);
     expect(isJob({ ...JOB, voice_id: undefined })).toBe(false);
+    expect(isJob({ ...JOB, speed: 1.1 })).toBe(true);
+    expect(isJob({ ...JOB, speed: '1.1' })).toBe(false);
   });
 });
 

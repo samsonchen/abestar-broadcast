@@ -112,7 +112,7 @@ describe('read-aloud end to end (local stack)', () => {
       epoch: 0,
       part: 0,
       parts: 1,
-      format: 'mp3_22050_32',
+      format: 'mp3_44100_64',
     });
     expect([1, 2]).toContain(clip.seq);
     expect(Buffer.from(clip.audio, 'base64').subarray(0, 3).toString('latin1')).toMatch(

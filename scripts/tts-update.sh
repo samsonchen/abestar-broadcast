@@ -15,6 +15,9 @@ cd "$(dirname "$0")/.."
 NAME=abestar-broadcast
 LANGS='en zh'
 lang_name() { case $1 in en) echo 'English' ;; zh) echo 'Chinese (Traditional and Simplified)' ;; esac; }
+# A new voice's speaking rate (docs/tts-plan.md §6); Chinese voices read slower than their previews. null keeps the
+# voice's stored setting. A replaced voice keeps the speed already set for its language.
+speed() { case $1 in zh) echo 1.1 ;; *) echo null ;; esac; }
 sample() { case $1 in en) echo 'This is the new read-aloud voice.' ;; zh) echo '這是新的朗讀聲音。' ;; esac; }
 
 say() { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
@@ -31,7 +34,7 @@ REF=$(sbjson projects list 2>/dev/null | jq -r --arg n "$NAME" '.projects[] | se
   die 'Not logged in. Run `supabase login` in a normal Terminal window first.'
 [[ -n $REF ]] || die "No project named $NAME; run scripts/supabase-setup.sh --tts first."
 query() { supabase --agent no db query --linked --project-ref "$REF" "$1"; }
-show_voices() { query "select lang, voice, voice_id, enabled from private.tts_voices order by lang, voice"; }
+show_voices() { query "select lang, voice, voice_id, speed, enabled from private.tts_voices order by lang, voice"; }
 
 say 'Current voices'
 show_voices
@@ -80,7 +83,7 @@ if [[ -n $TEST_KEY ]]; then
     jq -n --arg text "$(sample "$LANG_CODE")" --arg lang "$LANG_CODE" \
       '{text: $text, model_id: "eleven_flash_v2_5", language_code: $lang}' >"$OUT/body"
     CODE=$(curl -sS -o "$OUT/speech" -w '%{http_code}' \
-      "https://api.elevenlabs.io/v1/text-to-speech/$VOICE?output_format=mp3_22050_32" \
+      "https://api.elevenlabs.io/v1/text-to-speech/$VOICE?output_format=mp3_44100_64" \
       -H "xi-api-key: $TEST_KEY" -H 'Content-Type: application/json' --data-binary "@$OUT/body")
     [[ $CODE == 200 ]] || die "$LANG_CODE $KIND voice $VOICE refused: HTTP $CODE $(head -c 300 "$OUT/speech") (nothing was changed)"
     echo "  $(lang_name "$LANG_CODE"), $KIND: $VOICE OK, playing…"
@@ -107,8 +110,8 @@ if [[ -n $CHANGES ]]; then
     if [[ $VOICE == off ]]; then
       query "update private.tts_voices set enabled = false where lang = '$LANG_CODE' and voice = '$KIND'" >/dev/null
     else
-      query "insert into private.tts_voices (lang, voice, voice_id, language_code)
-        values ('$LANG_CODE', '$KIND', '$VOICE', '$LANG_CODE')
+      query "insert into private.tts_voices (lang, voice, voice_id, language_code, speed)
+        values ('$LANG_CODE', '$KIND', '$VOICE', '$LANG_CODE', $(speed "$LANG_CODE"))
         on conflict (lang, voice) do update set voice_id = excluded.voice_id, enabled = true" >/dev/null
     fi
   done <<<"$CHANGES"

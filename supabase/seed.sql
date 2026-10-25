@@ -5,11 +5,11 @@ select private.set_broadcast_token('local-dev-token');
 
 -- TTS against the ElevenLabs stub (supabase/functions/elevenlabs-stub); secret matches supabase/functions/.env.example.
 update private.tts_settings set enabled = true, function_url = 'http://kong:8000/functions/v1/tts';
-insert into private.tts_voices (lang, voice, voice_id, language_code) values
-  ('en', 'female', 'stub-female', 'en'),
-  ('en', 'male', 'stub-male', 'en'),
-  ('zh', 'female', 'stub-female', 'zh'),
-  ('zh', 'male', 'stub-male', 'zh');
+insert into private.tts_voices (lang, voice, voice_id, language_code, speed) values
+  ('en', 'female', 'stub-female', 'en', null),
+  ('en', 'male', 'stub-male', 'en', null),
+  ('zh', 'female', 'stub-female', 'zh', 1.1),
+  ('zh', 'male', 'stub-male', 'zh', 1.1);
 select vault.create_secret('local-tts-secret', 'tts_function_secret');
 
 insert into public.sessions (id, title, target_lang, tts_on)

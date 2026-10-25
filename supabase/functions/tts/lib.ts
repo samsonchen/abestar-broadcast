@@ -11,6 +11,8 @@ export interface TtsJob {
   voice_id: string;
   model_id: string;
   language_code: string | null;
+  /** ElevenLabs speaking rate (0.7–1.2); null or absent keeps the voice's stored setting. */
+  speed?: number | null;
 }
 
 /** One ElevenLabs request; the neighbouring text only shapes intonation and is not spoken. */
@@ -21,12 +23,12 @@ export interface SpeechRequest {
 }
 
 /**
- * About 25 s of speech: at 32 kbps a clip stays near 100 KB, about 135 KB in base64, well under Realtime's 256 KB
+ * About 13 s of speech: at 64 kbps a clip stays near 105 KB, about 140 KB in base64, well under Realtime's 256 KB
  * message limit.
  */
-export const MAX_CHUNK = 400;
-/** The same 25 s in Chinese or Japanese, spoken at about 5 characters a second against English's 15. */
-export const MAX_CJK_CHUNK = 120;
+export const MAX_CHUNK = 200;
+/** The same in Chinese or Japanese, spoken at about 5 characters a second against English's 15. */
+export const MAX_CJK_CHUNK = 60;
 
 const CJK = /[\u3000-\u303f\u3400-\u9fff\uf900-\ufaff\uff00-\uffef]/;
 const CJK_ALL = new RegExp(CJK.source, 'g');
@@ -51,7 +53,8 @@ export function isJob(body: unknown): body is TtsJob {
     str(b.model_id) &&
     optStr(b.previous_text) &&
     optStr(b.next_text) &&
-    optStr(b.language_code)
+    optStr(b.language_code) &&
+    (b.speed === null || b.speed === undefined || typeof b.speed === 'number')
   );
 }
 
@@ -105,12 +108,22 @@ export function speechRequests(job: TtsJob, max = maxChunk(job.text)): SpeechReq
   }));
 }
 
-/** Body of POST /v1/text-to-speech/{voice_id}. */
-export function elevenLabsBody(job: TtsJob, request: SpeechRequest): Record<string, unknown> {
+/**
+ * Body of POST /v1/text-to-speech/{voice_id}. A speed is sent with the voice's stored settings (GET
+ * /v1/voices/{voice_id}/settings), so that the other settings keep their stored values.
+ */
+export function elevenLabsBody(
+  job: TtsJob,
+  request: SpeechRequest,
+  storedSettings: Record<string, unknown> = {},
+): Record<string, unknown> {
   return {
     text: request.text,
     model_id: job.model_id,
     ...(job.language_code ? { language_code: job.language_code } : {}),
+    ...(typeof job.speed === 'number'
+      ? { voice_settings: { ...storedSettings, speed: job.speed } }
+      : {}),
     ...(request.previous_text ? { previous_text: request.previous_text } : {}),
     ...(request.next_text ? { next_text: request.next_text } : {}),
   };

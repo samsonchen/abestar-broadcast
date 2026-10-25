@@ -25,7 +25,7 @@ for VOICE in "${VOICES[@]}"; do
     continue
   fi
   CODE=$(curl -sS -o "$OUT/speech" -w '%{http_code}' \
-    "https://api.elevenlabs.io/v1/text-to-speech/$VOICE?output_format=mp3_22050_32" \
+    "https://api.elevenlabs.io/v1/text-to-speech/$VOICE?output_format=mp3_44100_64" \
     -H "xi-api-key: $XI_KEY" -H 'Content-Type: application/json' \
     -d '{"text":"The nine-in-one elections will be held on November 28th.","model_id":"eleven_flash_v2_5","language_code":"en"}')
   if [[ $CODE == 200 ]]; then
