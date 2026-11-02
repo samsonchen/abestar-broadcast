@@ -289,6 +289,35 @@ describe('page and session lifecycle', () => {
     expect(await worker().hello(TAB)).toEqual({ capture: true, resumeAfterSeq: 41 });
   });
 
+  it('starts over in a new epoch when a reload lands on another event', async () => {
+    const b = await live();
+    expect(await b.hello(TAB, 'AAA-1')).toEqual({ capture: true, resumeAfterSeq: null });
+    await b.capture(TAB, { kind: 'baseline', seq: 300 });
+    expect(await b.hello(TAB, 'AAA-1')).toEqual({ capture: true, resumeAfterSeq: 300 });
+
+    expect(await b.hello(TAB, 'BBB-2')).toEqual({ capture: true, resumeAfterSeq: null });
+    await b.capture(TAB, line(1, 'New event.'));
+    await b.flush();
+    expect(fake.written).toEqual([{ epoch: 1, seq: 1, text: 'New event.' }]);
+  });
+
+  it('starts over in a new epoch when the page moves to another event', async () => {
+    const b = await live();
+    await b.capture(TAB, { kind: 'event', code: 'AAA-1' });
+    await b.capture(TAB, line(300, 'Old event.'));
+    await b.capture(TAB, { kind: 'event', code: 'AAA-1' });
+    expect(await b.getState()).toMatchObject({ broadcast: { epoch: 0, lastSeq: 300 } });
+
+    await b.capture(TAB, { kind: 'event', code: 'BBB-2' });
+    expect(await b.getState()).toMatchObject({ broadcast: { epoch: 1, lastSeq: null } });
+    await b.capture(TAB, line(1, 'New event.'));
+    await b.flush();
+    expect(fake.written).toEqual([
+      { epoch: 0, seq: 300, text: 'Old event.' },
+      { epoch: 1, seq: 1, text: 'New event.' },
+    ]);
+  });
+
   it('reports a missing column and a closed tab', async () => {
     const b = await live();
     await b.capture(TAB, { kind: 'status', status: 'column-not-found' });
@@ -382,6 +411,7 @@ describe('read-aloud (docs/tts-plan.md §7)', () => {
         title: 'T',
         tabId: TAB,
         epoch: 0,
+        event: null,
         lastSeq: null,
         startedAt: 0,
       },

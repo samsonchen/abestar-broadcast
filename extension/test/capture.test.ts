@@ -95,6 +95,7 @@ describe('final lines', () => {
     const mock = await page();
     await startSettled();
     mock.addLine(corrected(1));
+    await advance(0);
     mock.addLine({ seq: 2, status: 'corrected', text: 'こんにちは', lang: 'ja' });
     await advance(0);
     expect(segments().map((m) => m.kind === 'segment' && m.lang)).toEqual(['en', 'ja']);
@@ -221,6 +222,120 @@ describe('baseline', () => {
     mock.addLine(corrected(1));
     await advance(0);
     expect(segments().map((m) => m.seq)).toEqual([1]);
+  });
+});
+
+describe('history that comes late or out of order', () => {
+  it('does not send history that arrives after a new draft on an empty feed', async () => {
+    const mock = await page();
+    start();
+    mock.addLine(draft(61));
+    await advance(0);
+    expect(baselines()).toEqual([60]);
+
+    mock.addLine(corrected(59));
+    mock.addLine(corrected(60));
+    await advance(0);
+    expect(segments()).toEqual([]);
+
+    mock.updateLine(61, 'corrected', 'Sixty-one.');
+    await advance(0);
+    expect(segments().map((m) => m.seq)).toEqual([61]);
+  });
+
+  it('starts from 0 when the first draft is the first line of the event', async () => {
+    const mock = await page();
+    start();
+    mock.addLine(draft(1));
+    await advance(0);
+    expect(baselines()).toEqual([0]);
+    mock.updateLine(1, 'corrected', 'One.');
+    await advance(0);
+    expect(segments().map((m) => m.seq)).toEqual([1]);
+  });
+
+  it('counts a batch that arrives after the history window as history', async () => {
+    const mock = await page();
+    start();
+    await advance(5_000);
+    expect(baselines()).toEqual([0]);
+
+    for (const seq of [1, 2, 3]) mock.addLine(corrected(seq));
+    await advance(0);
+    expect(baselines()).toEqual([0, 3]);
+    expect(segments()).toEqual([]);
+
+    mock.addLine(corrected(4));
+    await advance(0);
+    expect(segments().map((m) => m.seq)).toEqual([4]);
+  });
+
+  it('sends one final line that arrives after the history window', async () => {
+    const mock = await page();
+    start();
+    await advance(5_000);
+    mock.addLine(corrected(1));
+    await advance(0);
+    expect(segments().map((m) => m.seq)).toEqual([1]);
+  });
+
+  it('treats a late batch as history after a reload that found no lines yet', async () => {
+    const mock = await page();
+    start({ resumeAfterSeq: 0 });
+    for (const seq of [1, 2]) mock.addLine(corrected(seq));
+    await advance(0);
+    expect(segments()).toEqual([]);
+  });
+});
+
+describe('moving to another event in the same tab', () => {
+  const at = (path: string) => history.replaceState(null, '', path);
+  const events = () => sent.flatMap((m) => (m.kind === 'event' ? [m.code] : []));
+
+  afterEach(() => at('/'));
+
+  it('reports the event it starts on', async () => {
+    at('/listen/AAA-1');
+    await page();
+    start();
+    await advance(0);
+    expect(events()).toEqual(['AAA-1']);
+  });
+
+  it('does not count /j/ moving to /listen/ for the same event as a move', async () => {
+    at('/j/AAA-1');
+    const mock = await page({ history: [corrected(1)] });
+    start();
+    at('/listen/AAA-1');
+    mock.addLine(corrected(2));
+    await advance(0);
+    expect(events()).toEqual(['AAA-1']);
+    expect(segments().map((m) => m.seq)).toEqual([2]);
+  });
+
+  it('starts over on the new event: its low numbers are sent, its history is not', async () => {
+    at('/listen/AAA-1');
+    const old = await page({ history: [corrected(300)] });
+    start();
+    old.addLine(corrected(301));
+    await advance(0);
+
+    at('/listen/BBB-2');
+    old.addLine(corrected(302)); // the old feed, still on screen for a moment
+    await advance(0);
+    expect(events()).toEqual(['AAA-1', 'BBB-2']);
+    expect(segments().map((m) => m.seq)).toEqual([301]);
+
+    const next = mountMock(document.querySelector('main') as HTMLElement, {
+      history: [corrected(1), corrected(2)],
+    });
+    await advance(100);
+    expect(baselines().at(-1)).toBe(2);
+    expect(segments().map((m) => m.seq)).toEqual([301]);
+
+    next.addLine(corrected(3));
+    await advance(0);
+    expect(segments().map((m) => m.seq)).toEqual([301, 3]);
   });
 });
 

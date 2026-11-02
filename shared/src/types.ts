@@ -38,6 +38,8 @@ export type CaptureMessage =
   | { kind: 'segment'; seq: number; text: string; lang: string | null }
   /** Lines at or below `seq` were on screen when the broadcast started, and are not sent. */
   | { kind: 'baseline'; seq: number }
+  /** The event this tab is on, from its URL. Another event's lines are numbered from 1 again. */
+  | { kind: 'event'; code: string }
   | { kind: 'status'; status: 'ok' | 'column-not-found' | 'detached' };
 
 /** One read-aloud clip on the private Realtime channel `tts:<session_id>`, event `audio` (docs/tts-plan.md §6). */

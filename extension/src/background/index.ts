@@ -67,7 +67,7 @@ chrome.runtime.onMessage.addListener((message: ToBackground, sender, reply) => {
   const handle = async () => {
     switch (message.kind) {
       case 'hello':
-        return tabId === undefined ? { capture: false } : broadcaster.hello(tabId);
+        return tabId === undefined ? { capture: false } : broadcaster.hello(tabId, message.event);
       case 'capture':
         if (tabId !== undefined) await broadcaster.capture(tabId, message.message);
         return null;

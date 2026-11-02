@@ -109,6 +109,7 @@ export class Broadcaster {
       tabId: opts.tabId,
       epoch: 0,
       lastSeq: null,
+      event: null,
       startedAt: Date.now(),
     };
     this.queue = [];
@@ -175,10 +176,25 @@ export class Broadcaster {
   }
 
   /** A content script (re)loaded; tell it whether to capture, and from where. */
-  async hello(tabId: number): Promise<HelloReply> {
+  async hello(tabId: number, event: string | null = null): Promise<HelloReply> {
     await this.ready;
     if (this.state.broadcast?.tabId !== tabId) return { capture: false };
-    return { capture: true, resumeAfterSeq: this.state.broadcast.lastSeq };
+    if (event) await this.onEvent(this.state.broadcast, event);
+    return { capture: true, resumeAfterSeq: this.state.broadcast?.lastSeq ?? null };
+  }
+
+  /** Another event's lines are numbered from 1 again: start over in a new epoch, so none overwrites an old line. */
+  private async onEvent(broadcast: Broadcast, event: string): Promise<void> {
+    if (broadcast.event === event) return;
+    const moved = broadcast.event !== null;
+    await this.update({
+      broadcast: {
+        ...broadcast,
+        event,
+        epoch: moved ? broadcast.epoch + 1 : broadcast.epoch,
+        lastSeq: moved ? null : broadcast.lastSeq,
+      },
+    });
   }
 
   async capture(tabId: number, message: CaptureMessage): Promise<void> {
@@ -191,7 +207,9 @@ export class Broadcaster {
       lastSeq: Math.max(broadcast.lastSeq ?? 0, seq),
     });
 
-    if (message.kind === 'baseline') {
+    if (message.kind === 'event') {
+      await this.onEvent(broadcast, message.code);
+    } else if (message.kind === 'baseline') {
       await this.update({ broadcast: raiseLastSeq(message.seq) });
     } else if (message.kind === 'status') {
       if (message.status === 'column-not-found') await this.update({ status: 'column-not-found' });

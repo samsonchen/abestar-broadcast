@@ -2,7 +2,7 @@
 
 import type { CaptureMessage } from '@abestar/shared';
 import type { HelloReply, ToBackground, ToContent } from '../messages';
-import { startCapture, type Capture } from './capture';
+import { eventCode, startCapture, type Capture } from './capture';
 import { followLatest, type Follow } from './follow';
 
 declare global {
@@ -47,8 +47,8 @@ if (!window.__abestarBroadcast) {
     reply({ ok: true });
   });
 
-  // After a reload of the broadcasting tab, carry on from the last line the worker has.
-  void (toBackground({ kind: 'hello' }) as Promise<HelloReply>)
+  // After a reload of the broadcasting tab, carry on from the last line the worker has for this event.
+  void (toBackground({ kind: 'hello', event: eventCode(document) }) as Promise<HelloReply>)
     .then((r) => {
       if (r.capture) start(r.resumeAfterSeq);
     })

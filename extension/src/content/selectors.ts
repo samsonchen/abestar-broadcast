@@ -13,5 +13,8 @@ export const CORRECTED = 'corrected';
 /** "Jump to latest", shown only while scrolled back. It has no test ID and its label is translated. */
 export const JUMP_BUTTON = '[data-testid="subtitle-feed"] ~ button';
 
+/** A page's path → its event code, e.g. `/listen/GEF-5901`. */
+export const EVENT_PATH = /^\/(?:j|listen)\/([^/]+)/;
+
 /** `data-seg-id` → sequence number N, e.g. `mvy16ds3-19`. */
 export const SEG_ID = /-(\d+)$/;

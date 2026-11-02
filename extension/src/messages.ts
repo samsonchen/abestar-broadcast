@@ -7,7 +7,7 @@ export type ToContent = { kind: 'ping' } | { kind: 'start' } | { kind: 'stop' };
 
 /** Content script / popup → background. */
 export type ToBackground =
-  | { kind: 'hello' }
+  | { kind: 'hello'; event: string | null }
   | { kind: 'capture'; message: CaptureMessage }
   | { kind: 'start'; tabId: number; title: string; force: boolean; tts: boolean; voice: Voice }
   | { kind: 'tts'; on: boolean; voice: Voice }
@@ -51,6 +51,8 @@ export interface Broadcast {
   epoch: number;
   /** The highest line the worker has, including those on screen at the start. Null until the page reports it. */
   lastSeq: number | null;
+  /** The Abestar event of the tab, once reported. */
+  event: string | null;
   startedAt: number;
 }
 

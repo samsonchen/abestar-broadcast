@@ -2,7 +2,10 @@
 // A line is sent once, when it is final. See docs/superpowers/specs/2026-11-02-abestar-v2-design.md.
 
 import type { CaptureMessage } from '@abestar/shared';
-import { CORRECTED, FEED, LINE, SEG_ID } from './selectors';
+import { CORRECTED, EVENT_PATH, FEED, LINE, SEG_ID } from './selectors';
+
+export const eventCode = (doc: Document): string | null =>
+  EVENT_PATH.exec(doc.location.pathname)?.[1] ?? null;
 
 export interface CaptureOptions {
   /** After a reload: lines up to here were already sent. Null: this is a new broadcast, take it from the page. */
@@ -49,6 +52,11 @@ export function startCapture(
   let feed: Element | null = null;
   let notFoundTimer: Timer | undefined;
   let historyTimer: Timer | undefined;
+  /** No lines seen yet, with the baseline already at 0: a batch may still be the history, just slow to arrive. */
+  let historyMayBeLate = resumeAfterSeq === 0;
+  let event = eventCode(doc);
+  /** The previous event's feed, which may stay on screen for a moment after the URL changes. */
+  let retiredFeed: Element | null = null;
 
   const seqOf = (line: Element): number | null => {
     const match = SEG_ID.exec(line.getAttribute('data-seg-id') ?? '');
@@ -92,26 +100,45 @@ export function startCapture(
     }
   }
 
-  /** Whatever is final on screen now is history. Drafts are still to come. */
+  /**
+   * Whatever is final on screen now is history. Drafts are still to come, and lines before the first draft are
+   * history even if they have not arrived yet.
+   */
   function takeBaseline() {
     clearTimeout(historyTimer);
     historyTimer = undefined;
     if (!feed) return; // replaced during the window: attach() arms the timer again
-    const seqs = linesIn(feed)
-      .filter(isFinal)
-      .map(seqOf)
-      .filter((seq) => seq !== null);
-    baseline = Math.max(0, ...seqs);
+    const lines = linesIn(feed);
+    const seqs = (list: Element[]) => list.map(seqOf).filter((seq) => seq !== null);
+    const drafts = seqs(lines.filter((line) => !isFinal(line)));
+    historyMayBeLate = lines.length === 0;
+    baseline = Math.max(
+      0,
+      ...seqs(lines.filter(isFinal)),
+      ...(drafts.length > 0 ? [Math.min(...drafts) - 1] : []),
+    );
     send({ kind: 'baseline', seq: baseline });
     scan();
   }
 
-  const feedObserver = new MutationObserver(() => {
+  function linesChanged() {
+    if (!feed) return;
+    const lines = linesIn(feed);
     if (baseline === null) {
-      if (feed && linesIn(feed).length > 0) takeBaseline();
-    } else {
-      scan();
+      if (lines.length > 0) takeBaseline();
+      return;
     }
+    if (historyMayBeLate && lines.length > 0) {
+      historyMayBeLate = false;
+      // Live lines come one at a time; several final ones at once, with nothing before them, are the history.
+      if (lines.filter(isFinal).length > 1) return takeBaseline();
+    }
+    scan();
+  }
+
+  const feedObserver = new MutationObserver(() => {
+    checkEvent();
+    linesChanged(); // nothing to do if the event just changed: the feed is gone
   });
 
   function waitForFeed() {
@@ -127,9 +154,8 @@ export function startCapture(
     clearTimeout(notFoundTimer);
     send({ kind: 'status', status: 'ok' });
     feedObserver.observe(found, OBSERVE);
-    if (baseline !== null) scan();
-    else if (linesIn(found).length > 0) takeBaseline();
-    else historyTimer ??= setTimeout(takeBaseline, historyWindowMs);
+    linesChanged();
+    if (baseline === null) historyTimer ??= setTimeout(takeBaseline, historyWindowMs);
   }
 
   function detach() {
@@ -139,14 +165,39 @@ export function startCapture(
     waitForFeed();
   }
 
+  /** Another event's lines are numbered from 1 again, so nothing known about this one carries over. */
+  function movedTo(code: string) {
+    event = code;
+    send({ kind: 'event', code });
+    feedObserver.disconnect();
+    retiredFeed = feed;
+    feed = null;
+    baseline = null;
+    historyMayBeLate = false;
+    finished.clear();
+    sentAsDraft.clear();
+    for (const timer of draftTimers.values()) clearTimeout(timer);
+    draftTimers.clear();
+    clearTimeout(historyTimer);
+    historyTimer = undefined;
+    waitForFeed();
+  }
+
+  function checkEvent() {
+    const code = eventCode(doc);
+    if (code && code !== event) movedTo(code);
+  }
+
   // The feed appears after the language picker, and React may replace it.
   const pageObserver = new MutationObserver(() => {
+    checkEvent();
     if (feed && !feed.isConnected) detach();
     if (!feed) {
       const found = doc.querySelector(FEED);
-      if (found) attach(found);
+      if (found && found !== retiredFeed) attach(found);
     }
   });
+  if (event) send({ kind: 'event', code: event });
   pageObserver.observe(doc, { subtree: true, childList: true });
   const initial = doc.querySelector(FEED);
   if (initial) attach(initial);

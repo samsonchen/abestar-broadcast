@@ -1,6 +1,6 @@
 # Abestar v2 extension: design
 
-Written 2026-11-02. Status: awaiting owner review. Overrides `PLAN.md` and `docs/tts-plan.md` where they differ (v1's
+Written 2026-11-02. Status: approved and implemented. Overrides `PLAN.md` and `docs/tts-plan.md` where they differ (v1's
 R4, one line behind, stays in force for v1 sessions only).
 
 ## Goal
@@ -104,10 +104,19 @@ Any other `data-status` value is treated like a draft, so an unknown new status 
   later in one batch. So if the feed is empty, the baseline is taken at the first batch of lines, or set to 0 if none
   arrive within 5 s (`historyWindowMs`).
 
+A new draft that comes first means every line before it is history, so the baseline is at least one below the lowest
+draft, even if those lines have not arrived yet. After the 5 s window, a first batch with more than one final line
+still counts as history: live lines come one at a time.
+
 Lines added late after a dropped connection are above the baseline and are sent normally.
 
+**Another event in the same tab.** Another event's lines are numbered from 1 again, so a broadcast that stays on the old
+baseline would drop them while the popup still says Live. The event code from the URL (`/j/<code>`, `/listen/<code>`)
+goes to the worker with `hello` and an `event` capture message. When it changes, the broadcast continues in a new epoch
+with a new baseline, as with a new broadcast, and phones keep the old event's lines above the new ones.
+
 **Removed.** The debounce (and its options field, `DEFAULT_DEBOUNCE_MS`, and the `debounceMs` message fields), the
-`clear` reset and its detection. The epoch no longer changes during a broadcast: a reload resumes on the same numbers,
+`clear` reset and its detection. The epoch changes only when the tab moves to another event: a reload resumes on the same numbers,
 and `upsert_segment`'s existing behavior makes any repeat harmless.
 
 **Waiting for the feed.** The feed does not exist on the language picker, and React may remount it, so the page
