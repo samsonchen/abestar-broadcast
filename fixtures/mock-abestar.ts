@@ -1,94 +1,50 @@
-// Replica of Abestar GO!'s presentation page, enough for capture tests and e2e (PLAN.md §2.2, §2.5).
-// Each DOM operation and timing mirrors fixtures/logs/raw-session-1.json, which
-// fixtures/test/mock-fidelity.test.ts checks.
+// Replica of Abestar v2's audience page, enough for capture tests and e2e. Checked against
+// fixtures/logs/v2-session-1.json and v2-page-excerpt.html by fixtures/test/mock-fidelity.test.ts.
+import type { TimelineStep } from './timeline';
 
-export const DOTS_INTERVAL_MS = 400;
-/** Gap between emptying the placeholder `<p>` and the first typed characters. */
-export const FIRST_CHARS_DELAY_MS = 23;
-export const TYPING_FRAME_MS = 1000 / 60;
-export const CHARS_PER_FRAME = 2;
-
-const CARD_CLASS = 'relative rounded-lg p-2 xl:p-4 shadow-md bg-slate-50';
-const TEXT_CLASS = 'text-lg font-medium text-gray-700';
-const CHECK_ICON =
-  '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" ' +
-  'stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" ' +
-  'class="lucide lucide-check-check absolute top-0.5 right-1 w-3 h-3 text-amber-500">' +
-  '<path d="M18 6 7 17l-5-5"></path><path d="m22 10-7.5 7.5L13 16"></path></svg>';
-
-export type TimelineStep =
-  | { at: number; action: 'add'; source?: string }
-  | { at: number; action: 'resolve'; n: number; text: string }
-  | { at: number; action: 'clear' };
-
-/** The real session behind raw-session-1.json: when each card appeared and when its translation arrived. */
-export const SESSION_1: TimelineStep[] = [
-  { at: 0, action: 'add' },
-  { at: 5307, action: 'resolve', n: 1, text: 'Chinese test, testing translation.' },
-  { at: 6929, action: 'add' },
-  { at: 9577, action: 'add' },
-  { at: 11024, action: 'resolve', n: 2, text: 'Come and check out the Furry Kid Market.' },
-  { at: 14953, action: 'add' },
-  {
-    at: 15255,
-    action: 'resolve',
-    n: 3,
-    text: 'Healthy and flexible for brisk walking, or enhanced maintenance for joint degeneration warnings.',
-  },
-  { at: 20757, action: 'resolve', n: 4, text: 'Pet joint health self-assessment form.' },
-];
-
-export interface MockAbestar {
-  /** Appends a placeholder card with cycling dots; returns its N. */
-  addPending(source?: string): number;
-  /** Replaces placeholder N with `text`, typed in like Abestar does. */
-  resolve(n: number, text: string): void;
-  /** Broom button: removes every card and restarts N at 1. */
-  clear(): void;
-  /** N of every card still showing dots, oldest first. */
-  pending(): number[];
-  play(timeline: TimelineStep[]): void;
-  /** Cancels all timers (dots, typing, timeline). */
-  stop(): void;
-}
-
-interface PendingCard {
-  card: HTMLElement;
-  p: HTMLElement;
-  dots: ReturnType<typeof setInterval>;
+export interface MockLine {
+  seq: number;
+  status: string;
+  text: string;
+  lang: string;
 }
 
 export interface MockOptions {
-  /**
-   * Type with requestAnimationFrame, as the real page does (checked on 2026-10-24: 251 frames for one sentence,
-   * no short timers), so Chrome pauses the typing in a background tab. The default, a 60 Hz timer, suits jsdom and
-   * fake timers.
-   */
-  animationFrames?: boolean;
+  /** Show the language picker first; `enter()` or its button moves on to the feed. */
+  picker?: boolean;
+  /** Lines the page loads on entering, added in one batch after `historyDelayMs`, as on the real page. */
+  history?: MockLine[];
+  historyDelayMs?: number;
 }
 
-export function mountMock(
-  root: HTMLElement,
-  lang = 'en-US',
-  sourceLang = 'zh-TW',
-  { animationFrames = false }: MockOptions = {},
-): MockAbestar {
-  const doc = root.ownerDocument;
-  const win = doc.defaultView as Window;
-  root.innerHTML =
-    '<div class="flex gap-4">' +
-    `<section class="flex-1"><h2>Speaker <span>(${sourceLang})</span></h2>` +
-    '<div data-testid="col-left" class="min-h-0 flex-1 overflow-y-auto"><div class="flex flex-col gap-3 px-3"></div></div></section>' +
-    `<section class="flex-1"><h2>Translation <span>(${lang})</span></h2>` +
-    '<div data-testid="col-right" class="min-h-0 flex-1 overflow-y-auto"><div class="flex flex-col gap-3 px-3"><div></div></div></div></section>' +
-    '</div>';
-  const sourceList = root.querySelector('[data-testid="col-left"] > div') as HTMLElement;
-  const list = root.querySelector('[data-testid="col-right"] > div') as HTMLElement;
-  const spacer = list.lastElementChild as HTMLElement;
+export interface MockAbestar {
+  setInterim(text: string | null): void;
+  addLine(line: MockLine): void;
+  updateLine(seq: number, status: string, text: string): void;
+  lines(): MockLine[];
+  /** React replacing the feed element, with the same lines. */
+  remountFeed(): void;
+  /** Leaves the language picker. */
+  enter(): void;
+  play(steps: TimelineStep[]): void;
+  stop(): void;
+}
 
+const PREFIX = 'mvy16ds3';
+const TEXT_CLASS = 'break-words whitespace-pre-wrap text-[19px] leading-relaxed';
+const CARD_CLASS = 'rounded-card bg-surface px-5 py-4 shadow-card';
+const BOTTOM_SLOP_PX = 2;
+
+export function mountMock(root: HTMLElement, options: MockOptions = {}): MockAbestar {
+  const doc = root.ownerDocument;
+  const { picker = false, history = [], historyDelayMs = 70 } = options;
   const timers = new Set<ReturnType<typeof setTimeout>>();
-  const pendingCards = new Map<number, PendingCard>();
-  let lastN = 0;
+  const lines = new Map<number, { line: MockLine; p: HTMLElement }>();
+  let wrapper: HTMLElement | null = null;
+  let feed: HTMLElement | null = null;
+  let list: HTMLElement | null = null;
+  let button: HTMLButtonElement | null = null;
+  let interim: HTMLElement | null = null;
 
   const later = (ms: number, fn: () => void) => {
     const id = setTimeout(() => {
@@ -97,121 +53,145 @@ export function mountMock(
     }, ms);
     timers.add(id);
   };
-
-  const every = (ms: number, fn: () => void) => {
-    const id = setInterval(fn, ms);
-    timers.add(id);
-    return id;
+  const atBottom = (el: HTMLElement) =>
+    el.scrollHeight - el.scrollTop - el.clientHeight <= BOTTOM_SLOP_PX;
+  const stick = (el: HTMLElement, wasAtBottom: boolean) => {
+    if (wasAtBottom) el.scrollTop = el.scrollHeight;
+  };
+  const card = (p: HTMLElement) => {
+    const div = doc.createElement('div');
+    div.className = CARD_CLASS;
+    div.append(p);
+    return div;
+  };
+  const style = (p: HTMLElement, status: string) => {
+    p.setAttribute('data-status', status);
+    p.className = `${TEXT_CLASS} ${status === 'corrected' ? 'not-italic text-gray-900' : 'italic text-gray-400'}`;
+  };
+  const lineElement = (line: MockLine) => {
+    const p = doc.createElement('p');
+    p.setAttribute('data-testid', 'subtitle-line');
+    p.setAttribute('data-seg-id', `${PREFIX}-${line.seq}`);
+    p.setAttribute('data-lang', line.lang);
+    p.setAttribute('lang', line.lang);
+    style(p, line.status);
+    p.textContent = line.text;
+    return p;
   };
 
-  const cancel = (id: ReturnType<typeof setTimeout>) => {
-    clearTimeout(id);
-    clearInterval(id);
-    timers.delete(id);
-  };
-
-  /** Animation frames in flight, cancelled by stop(). */
-  const frames = new Set<number>();
-  /** Calls fn on every typing frame until it returns false. */
-  const typeEachFrame = (fn: () => boolean) => {
-    if (!animationFrames) {
-      const typing = every(TYPING_FRAME_MS, () => {
-        if (!fn()) cancel(typing);
-      });
-      return;
-    }
-    const step = () => {
-      frames.delete(id);
-      if (fn()) {
-        id = win.requestAnimationFrame(step);
-        frames.add(id);
-      }
-    };
-    let id = win.requestAnimationFrame(step);
-    frames.add(id);
-  };
+  function mountFeed() {
+    wrapper = doc.createElement('div');
+    wrapper.className = 'relative flex min-h-0 flex-1 flex-col';
+    feed = doc.createElement('div');
+    feed.setAttribute('data-testid', 'subtitle-feed');
+    feed.setAttribute('aria-live', 'polite');
+    feed.className = 'min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain';
+    list = doc.createElement('div');
+    list.className = 'flex flex-col gap-3 px-4 py-4';
+    feed.append(list);
+    button = doc.createElement('button');
+    button.type = 'button';
+    button.className = 'btn-primary absolute bottom-4 left-1/2 h-10 rounded-full px-5 shadow-pop';
+    button.textContent = 'Jump to latest';
+    button.hidden = true;
+    const currentFeed = feed;
+    const currentButton = button;
+    button.addEventListener('click', () => {
+      currentFeed.scrollTop = currentFeed.scrollHeight;
+      currentButton.hidden = true;
+    });
+    feed.addEventListener('scroll', () => {
+      currentButton.hidden = atBottom(currentFeed);
+    });
+    wrapper.append(feed, button);
+    root.replaceChildren(wrapper);
+  }
 
   const mock: MockAbestar = {
-    addPending(source) {
-      const n = ++lastN;
-      const card = doc.createElement('div');
-      card.setAttribute('lang', lang);
-      card.setAttribute('data-testid', `translation-${n}`);
-      card.className = CARD_CLASS;
-      const p = doc.createElement('p');
-      p.setAttribute('data-testid', `translation-dots-${n}`);
-      p.className = TEXT_CLASS;
-      const dotsText = doc.createTextNode('.');
-      p.append(dotsText);
-      card.append(p);
-      list.insertBefore(card, spacer);
-
-      if (source) {
-        const line = doc.createElement('p');
-        line.className = TEXT_CLASS;
-        line.textContent = source;
-        sourceList.append(line);
+    setInterim(text) {
+      if (!list || !feed) return;
+      const bottom = atBottom(feed);
+      if (text === null) {
+        interim?.parentElement?.remove();
+        interim = null;
+      } else if (interim) {
+        (interim.firstChild as Text).data = text;
+      } else {
+        interim = doc.createElement('p');
+        interim.setAttribute('data-testid', 'subtitle-interim');
+        interim.setAttribute('data-seg-id', 'interim');
+        style(interim, 'draft');
+        interim.append(doc.createTextNode(text));
+        const div = card(interim);
+        div.setAttribute('aria-hidden', 'true');
+        list.append(div);
       }
+      stick(feed, bottom);
+    },
 
-      const dots = every(DOTS_INTERVAL_MS, () => {
-        dotsText.data = '.'.repeat((dotsText.data.length % 3) + 1);
+    addLine(line) {
+      if (!list || !feed) return;
+      const bottom = atBottom(feed);
+      const p = lineElement(line);
+      lines.set(line.seq, { line: { ...line }, p });
+      const div = card(p);
+      if (interim?.parentElement) list.insertBefore(div, interim.parentElement);
+      else list.append(div);
+      stick(feed, bottom);
+    },
+
+    updateLine(seq, status, text) {
+      const entry = lines.get(seq);
+      if (!entry) throw new Error(`no line ${seq}`);
+      entry.line.status = status;
+      entry.line.text = text;
+      style(entry.p, status);
+      entry.p.textContent = text;
+    },
+
+    lines: () => Array.from(lines.values(), (e) => ({ ...e.line })),
+
+    remountFeed() {
+      mountFeed();
+      const current = Array.from(lines.values(), (e) => e.line);
+      lines.clear();
+      interim = null;
+      for (const line of current) mock.addLine(line);
+    },
+
+    enter() {
+      mountFeed();
+      later(historyDelayMs, () => {
+        for (const line of history) mock.addLine(line);
       });
-      pendingCards.set(n, { card, p, dots });
-      return n;
     },
 
-    resolve(n, text) {
-      const pending = pendingCards.get(n);
-      if (!pending) throw new Error(`translation-${n} is not pending`);
-      pendingCards.delete(n);
-      cancel(pending.dots);
-      const { card, p } = pending;
-
-      // Same order as React's reconciliation in the recorded log.
-      const icon = doc.createElement('template');
-      icon.innerHTML = CHECK_ICON;
-      card.insertBefore(icon.content.firstChild as Node, p);
-      p.removeAttribute('data-testid');
-      p.textContent = '';
-
-      later(FIRST_CHARS_DELAY_MS, () => {
-        let shown = Math.min(CHARS_PER_FRAME, text.length);
-        const typed = doc.createTextNode(text.slice(0, shown));
-        p.append(typed);
-        if (shown >= text.length) return;
-        typeEachFrame(() => {
-          shown = Math.min(shown + CHARS_PER_FRAME, text.length);
-          typed.data = text.slice(0, shown);
-          return shown < text.length;
-        });
-      });
-    },
-
-    clear() {
-      mock.stop();
-      pendingCards.clear();
-      lastN = 0;
-      for (const el of Array.from(list.children)) if (el !== spacer) el.remove();
-      sourceList.replaceChildren();
-    },
-
-    pending: () => Array.from(pendingCards.keys()),
-
-    play(timeline) {
-      for (const step of timeline) {
+    play(steps) {
+      for (const step of steps) {
         later(step.at, () => {
-          if (step.action === 'add') mock.addPending(step.source);
-          else if (step.action === 'resolve') mock.resolve(step.n, step.text);
-          else mock.clear();
+          if (step.action === 'interim') mock.setInterim(step.text);
+          else if (step.action === 'add') mock.addLine(step);
+          else mock.updateLine(step.seq, step.status, step.text);
         });
       }
     },
 
     stop() {
-      for (const id of timers) cancel(id);
-      for (const id of frames) win.cancelAnimationFrame(id);
-      frames.clear();
+      for (const id of timers) clearTimeout(id);
+      timers.clear();
     },
   };
+
+  if (picker) {
+    const select = doc.createElement('select');
+    select.setAttribute('data-testid', 'target-lang-select');
+    const enter = doc.createElement('button');
+    enter.id = 'enter-event';
+    enter.textContent = 'Enter event';
+    enter.addEventListener('click', () => mock.enter());
+    root.replaceChildren(select, enter);
+  } else {
+    mock.enter();
+  }
   return mock;
 }

@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Mock Abestar GO!</title>
+    <title>Mock Abestar Live</title>
     <style>
       body {
         font-family: system-ui, sans-serif;
@@ -18,51 +18,38 @@
       .toolbar input {
         flex: 1 1 240px;
       }
-      .flex {
-        display: flex;
-      }
-      .flex-col {
-        flex-direction: column;
-      }
-      .gap-3 {
-        gap: 12px;
-      }
-      .gap-4 {
-        gap: 16px;
-      }
-      .flex-1 {
-        flex: 1;
-      }
       .relative {
         position: relative;
       }
       .absolute {
         position: absolute;
-        top: 2px;
-        right: 4px;
-        width: 12px;
-        height: 12px;
-        color: #f59e0b;
+        bottom: 16px;
+        left: 50%;
       }
-      .rounded-lg {
+      [data-testid='subtitle-feed'] {
+        max-height: 70vh;
+        overflow-y: auto;
+      }
+      .rounded-card {
         border-radius: 8px;
         padding: 8px 16px;
+        margin-bottom: 8px;
         background: #f8fafc;
         box-shadow: 0 2px 6px rgb(0 0 0 / 0.15);
       }
-      [data-testid='col-right'] {
-        max-height: 70vh;
-        overflow-y: auto;
+      .italic {
+        font-style: italic;
+        color: #9ca3af;
       }
     </style>
   </head>
   <body>
     <div class="toolbar">
-      <button id="play">Play session 1</button>
-      <button id="add">Add pending</button>
-      <input id="text" placeholder="Translation text for the oldest pending card" />
-      <button id="resolve">Resolve oldest</button>
-      <button id="clear" title="Broom">🧹 Clear</button>
+      <button id="play">Play the recorded session</button>
+      <input id="text" placeholder="Text of the next line" />
+      <button id="say">Say a line</button>
+      <button id="stuck">Say a line that stays a draft</button>
+      <button id="forget">Forget lines on reload</button>
     </div>
     <main id="app"></main>
     <script type="module" src="./mock-page.ts"></script>
