@@ -2,7 +2,7 @@
 //
 //   node build.mjs              production: Supabase project from shared/public-config.json
 //   node build.mjs --local      local stack + the mock page on http://localhost:5174 (e2e tests)
-//   node build.mjs --zip        production build plus dist/abestar-broadcast-<version>.zip
+//   node build.mjs --zip        production build plus dist/abestar-broadcast-v2-<version>.zip
 
 import { execFileSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -20,7 +20,10 @@ const config = JSON.parse(
   readFileSync(join(here, `../shared/${local ? 'local' : 'public'}-config.json`), 'utf8'),
 );
 
-const abestarPages = ['https://*.abestar.com.tw/presentation/*'];
+const abestarPages = [
+  'https://live.abestar.com.tw/j/*', // moves to /listen/ without a page load
+  'https://live.abestar.com.tw/listen/*',
+];
 const contentMatches = local ? [...abestarPages, 'http://localhost:5174/*'] : abestarPages;
 
 // Optional custom icons: static/icons/icon-<size>.png. Without them Chrome shows a letter icon.
@@ -34,12 +37,12 @@ const hasIcons = Object.keys(icons).length > 0;
 
 const manifest = {
   manifest_version: 3,
-  name: local ? 'Abestar Broadcast (local)' : 'Abestar Broadcast',
+  name: local ? 'Abestar Broadcast v2 (local)' : 'Abestar Broadcast v2',
   version: pkg.version ?? '0.1.0',
-  description: "Rebroadcasts Abestar GO!'s live translation to the audience's phones.",
+  description: "Rebroadcasts Abestar Live's translation to the audience's phones.",
   permissions: ['storage', 'activeTab', 'scripting', 'alarms'],
   host_permissions: [
-    'https://*.abestar.com.tw/*',
+    'https://live.abestar.com.tw/*',
     `${config.supabaseUrl}/*`,
     ...(local ? ['http://localhost:5174/*'] : []),
   ],
@@ -53,13 +56,13 @@ const manifest = {
   ...(hasIcons ? { icons } : {}),
   action: {
     default_popup: 'popup.html',
-    default_title: 'Abestar Broadcast',
+    default_title: 'Abestar Broadcast v2',
     ...(hasIcons ? { default_icon: icons } : {}),
   },
   options_ui: { page: 'options.html', open_in_tab: true },
 };
 
-const out = join(here, 'dist', local ? 'local' : 'prod');
+const out = join(here, 'dist', local ? 'v2-local' : 'v2');
 rmSync(out, { recursive: true, force: true });
 mkdirSync(out, { recursive: true });
 
@@ -93,7 +96,7 @@ writeFileSync(join(out, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\
 console.log(`Built ${out}`);
 
 if (zip) {
-  const file = join(here, 'dist', `abestar-broadcast-${manifest.version}.zip`);
+  const file = join(here, 'dist', `abestar-broadcast-v2-${manifest.version}.zip`);
   rmSync(file, { force: true });
   execFileSync('zip', ['-qr', file, '.'], { cwd: out });
   console.log(`Packed ${file}`);

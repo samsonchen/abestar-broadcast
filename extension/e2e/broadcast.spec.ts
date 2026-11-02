@@ -1,13 +1,20 @@
 // M3 end to end: the built extension (local target) captures the mock Abestar page and writes to the
 // local Supabase; a viewer reads the rows with the PIN (PLAN.md §4.6, §8).
 import { createClient } from '@supabase/supabase-js';
-import { test as base, chromium, expect, type BrowserContext, type Worker } from '@playwright/test';
+import {
+  test as base,
+  chromium,
+  expect,
+  type BrowserContext,
+  type Page,
+  type Worker,
+} from '@playwright/test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const EXTENSION = join(dirname(fileURLToPath(import.meta.url)), '../dist/local');
+const EXTENSION = join(dirname(fileURLToPath(import.meta.url)), '../dist/v2-local');
 const MOCK = 'http://localhost:5174/mock-abestar.html';
 const SUPABASE_URL = 'http://127.0.0.1:54321';
 const KEY = 'sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH'; // Supabase CLI's fixed local key
@@ -48,14 +55,20 @@ async function viewer(pin: string) {
     session: async () => {
       const { data } = await sb
         .from('sessions')
-        .select('target_lang, tts_on, tts_lang, tts_voice')
+        .select('target_lang, tts_on, tts_lang, tts_voice, tts_release')
         .single();
       return data;
     },
   };
 }
 
-test('broadcasts the mock session, survives a reload, and ends', async ({
+/** A line through its whole life on the mock: interim, then draft, then corrected with `text`. */
+async function say(abestar: Page, text: string) {
+  await abestar.locator('#text').fill(text);
+  await abestar.locator('#say').click();
+}
+
+test('broadcasts final lines, stays at the latest line, survives a reload, and ends', async ({
   context,
   worker,
   extensionId,
@@ -95,43 +108,48 @@ test('broadcasts the mock session, survives a reload, and ends', async ({
   const audience = await viewer(pin);
   expect(audience.joined).toMatchObject({ session: { status: 'live' } });
 
-  // The recorded session, replayed by the mock. The popup has focus, so the Abestar page is in the background;
-  // a short column makes it overflow, so following the newest line is visible.
-  await abestar.evaluate(() => {
-    const column = document.querySelector<HTMLElement>('[data-testid="col-right"]');
-    if (column) column.style.maxHeight = '60px';
-  });
-  // Playwright makes every page report focus; turn that off so the Abestar page knows it is in the background.
-  await (
-    await context.newCDPSession(abestar)
-  ).send('Emulation.setFocusEmulationEnabled', {
-    enabled: false,
-  });
-  await popup.bringToFront();
-  await abestar.evaluate(() => document.querySelector<HTMLElement>('#play')?.click()); // without focusing the page
+  // Lines reach the audience only with their final text.
+  await say(abestar, 'First line.');
   await expect
-    .poll(async () => (await audience.rows()).map((r) => r.text), { timeout: 40_000 })
-    .toEqual([
-      'Chinese test, testing translation.',
-      'Come and check out the Furry Kid Market.',
-      'Healthy and flexible for brisk walking, or enhanced maintenance for joint degeneration warnings.',
-      'Pet joint health self-assessment form.',
-    ]);
-  expect((await audience.rows()).every((r) => r.lang === 'en-US')).toBe(true);
-  const gap = await abestar.evaluate(() => {
-    const c = document.querySelector('[data-testid="col-right"]') as HTMLElement;
-    return {
-      overflow: c.scrollHeight - c.clientHeight,
-      fromBottom: c.scrollHeight - c.clientHeight - c.scrollTop,
-    };
+    .poll(async () => (await audience.rows()).map((r) => r.text), { timeout: 10_000 })
+    .toEqual(['First line.']);
+  await say(abestar, 'Second line.');
+  await expect
+    .poll(async () => (await audience.rows()).map((r) => r.text), { timeout: 10_000 })
+    .toEqual(['First line.', 'Second line.']);
+  for (const text of ['Third line.', 'Fourth line.']) await say(abestar, text);
+  await expect.poll(async () => (await audience.rows()).length, { timeout: 10_000 }).toBe(4);
+  expect((await audience.rows()).every((r) => r.lang === 'en')).toBe(true);
+  expect((await audience.rows()).every((r) => !r.text.startsWith('Draft'))).toBe(true);
+
+  // A short feed overflows, so scrolling back is possible; the page returns to the latest line after 3 s.
+  await abestar.evaluate(async () => {
+    const feed = document.querySelector<HTMLElement>('[data-testid="subtitle-feed"]');
+    if (feed) {
+      feed.style.maxHeight = '60px';
+      feed.scrollTop = feed.scrollHeight; // it was at 0, so going to 0 alone would fire no scroll event
+      await new Promise(requestAnimationFrame);
+      feed.scrollTop = 0;
+    }
   });
-  expect(gap.overflow).toBeGreaterThan(0);
-  expect(gap.fromBottom).toBeLessThanOrEqual(1); // kept at the newest line
+  await expect(abestar.locator('[data-testid="subtitle-feed"] ~ button')).toBeVisible();
+  await expect
+    .poll(
+      () =>
+        abestar.evaluate(() => {
+          const c = document.querySelector('[data-testid="subtitle-feed"]') as HTMLElement;
+          return c.scrollHeight - c.clientHeight - c.scrollTop;
+        }),
+      { timeout: 6_000 },
+    )
+    .toBeLessThanOrEqual(2);
+  await expect(abestar.locator('[data-testid="subtitle-feed"] ~ button')).toBeHidden();
   expect(await audience.session()).toEqual({
-    target_lang: 'en-US',
+    target_lang: 'en',
     tts_on: true,
     tts_lang: 'en',
     tts_voice: 'male',
+    tts_release: 'final',
   });
 
   // A second presenter takes over: switch the read-aloud voice while live.
@@ -145,19 +163,28 @@ test('broadcasts the mock session, survives a reload, and ends', async ({
   await expect(popup.locator('input[name="voice-live"][value="female"]')).toBeHidden();
   await popup.locator('#tts-live').check();
   await expect.poll(async () => (await audience.session())?.tts_lang).toBe('en');
-  const firstEpoch = (await audience.rows())[0]?.epoch ?? -1;
   await expect(popup.locator('#counts')).toHaveText('4 lines sent');
 
-  // The presenter reloads Abestar: numbering restarts at 1, earlier lines must stay.
+  // The presenter reloads Abestar. Nothing is sent twice, and a line that appeared during the reload is recovered.
+  await abestar.evaluate(() => {
+    const lines = JSON.parse(sessionStorage.getItem('mock-lines') ?? '[]') as unknown[];
+    lines.push({ seq: 5, status: 'corrected', text: 'During the reload.', lang: 'en' });
+    sessionStorage.setItem('mock-lines', JSON.stringify(lines));
+  });
   await abestar.reload();
-  await abestar.locator('#add').click();
-  await abestar.locator('#text').fill('After the reload.');
-  await abestar.locator('#resolve').click();
   await expect.poll(async () => (await audience.rows()).length, { timeout: 15_000 }).toBe(5);
-  const rows = await audience.rows();
-  expect(rows.slice(0, 4).every((r) => r.epoch === firstEpoch)).toBe(true);
-  expect(rows[4]).toMatchObject({ seq: 1, text: 'After the reload.' });
-  expect(rows[4]?.epoch).toBeGreaterThan(firstEpoch);
+  await say(abestar, 'After the reload.');
+  await expect
+    .poll(async () => (await audience.rows()).map((r) => r.text), { timeout: 15_000 })
+    .toEqual([
+      'First line.',
+      'Second line.',
+      'Third line.',
+      'Fourth line.',
+      'During the reload.',
+      'After the reload.',
+    ]);
+  expect(new Set((await audience.rows()).map((r) => r.epoch)).size).toBe(1);
 
   // End: the PIN stops working.
   await popup.locator('#end').click();
@@ -201,6 +228,51 @@ test('closing the Abestar tab ends the broadcast', async ({ context, worker, ext
   await expect.poll(async () => (await viewer(pin)).joined).toEqual({ error: 'invalid_pin' });
   await popup.locator('#ok').click();
   await expect(popup.locator('#idle')).toBeVisible();
+});
+
+test('a broadcast started on the language picker sends no history', async ({
+  context,
+  worker,
+  extensionId,
+}) => {
+  await worker.evaluate(() => chrome.storage.local.set({ token: 'local-dev-token' }));
+  const abestar = await context.newPage();
+  await abestar.goto(MOCK);
+  await abestar.evaluate(() =>
+    sessionStorage.setItem(
+      'mock-lines',
+      JSON.stringify([{ seq: 1, status: 'corrected', text: 'Old line.', lang: 'en' }]),
+    ),
+  );
+  await abestar.goto(`${MOCK}?picker`);
+  const tabId = await worker.evaluate(
+    async (url) => (await chrome.tabs.query({ url }))[0]?.id,
+    'http://localhost:5174/*',
+  );
+  const popup = await context.newPage();
+  popup.on('dialog', (dialog) => void dialog.accept());
+  await popup.goto(`chrome-extension://${extensionId}/popup.html?tab=${tabId}`);
+  await popup.locator('#start').click();
+  await expect(popup.locator('#status')).toHaveText(/Live|Choose a language/, { timeout: 15_000 });
+  const pin = (await popup.locator('#pin').textContent())?.trim() ?? '';
+  const audience = await viewer(pin);
+
+  await abestar.locator('#enter-event').click();
+  await expect(abestar.getByText('Old line.')).toBeVisible(); // the history batch comes just after the feed
+  await say(abestar, 'New line.');
+  await expect
+    .poll(async () => (await audience.rows()).map((r) => r.text), { timeout: 10_000 })
+    .toEqual(['New line.']);
+});
+
+test('a line stuck in draft is sent after 10 s', async ({ context, worker, extensionId }) => {
+  const { abestar, pin } = await startBroadcast(context, worker, extensionId);
+  const audience = await viewer(pin);
+  await abestar.locator('#text').fill('Stuck line.');
+  await abestar.locator('#stuck').click();
+  await expect
+    .poll(async () => (await audience.rows()).map((r) => r.text), { timeout: 15_000 })
+    .toEqual(['Stuck line.']);
 });
 
 test('restarting Chrome ends the broadcast', async () => {
