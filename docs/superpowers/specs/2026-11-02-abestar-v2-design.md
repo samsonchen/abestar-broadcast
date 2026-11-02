@@ -66,7 +66,9 @@ appears only after it.
 | Lines keep arriving while the page is scrolled back, so capture does not depend on scrolling.                                                                       |
 | The jump button has no test ID and its label is translated. Clicking it, or setting `scrollTop` to the bottom, returns to the bottom and the page then stays there. |
 
-**Not verified:** behavior in a hidden tab (see Testing). The evidence is one session, so D4 exists as a safety net.
+**Hidden tab (GEF-5901, 2026-11-02):** in a truly hidden tab with Chrome's background throttling on, 21 lines over 2.5 minutes went from draft to corrected in 0.4–1.4 s at normal speech pace, and the feed stayed at the bottom (gap under 1 px). Page timers were throttled to as little as once a minute, so the 3 s and 10 s timers can run late there. The background-tab workaround from v1 is removed.
+
+The evidence is otherwise one session, so D4 exists as a safety net.
 
 ## Capture
 
@@ -176,11 +178,8 @@ Side by side: the two load from different folders, so Chrome gives them differen
 broadcast token is entered once in v2. They match different pages. The server allows one live session at a time, so
 starting one while the other is live gives the existing "session already live" prompt.
 
-**Before the first v2 build:** `dist/prod` is not touched by the new build, but check that the installed v1 is not
-loaded from a folder that a clean or rebuild would remove. If it is, move it first.
-
 Removed from `main` (kept at the tag): v1 selectors and capture, the v1 mock and logs, and
-`content/frames.ts` + `main-world.ts` + `signals.ts` **only if** the hidden-tab test shows v2 does not need them.
+`content/frames.ts` + `main-world.ts` + `signals.ts`, which the hidden-tab test showed v2 does not need.
 
 ## Testing
 

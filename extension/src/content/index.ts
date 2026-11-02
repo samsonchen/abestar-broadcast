@@ -4,7 +4,6 @@ import type { CaptureMessage } from '@abestar/shared';
 import type { HelloReply, ToBackground, ToContent } from '../messages';
 import { startCapture, type Capture } from './capture';
 import { followLatest, type Follow } from './follow';
-import { BROADCAST_OFF, BROADCAST_ON } from './signals';
 
 declare global {
   interface Window {
@@ -35,7 +34,6 @@ if (!window.__abestarBroadcast) {
     follow?.stop();
     capture = startCapture(document, (m) => void send(m), { resumeAfterSeq });
     follow = followLatest(document);
-    document.dispatchEvent(new Event(BROADCAST_ON)); // keep Abestar typing in a background tab
   };
 
   chrome.runtime.onMessage.addListener((message: ToContent, _sender, reply) => {
@@ -45,7 +43,6 @@ if (!window.__abestarBroadcast) {
       follow?.stop();
       capture = null;
       follow = null;
-      document.dispatchEvent(new Event(BROADCAST_OFF));
     }
     reply({ ok: true });
   });

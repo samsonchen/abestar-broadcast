@@ -79,11 +79,11 @@ The extension is not in the Chrome Web Store; it is loaded from a folder.
    npm install
    npm run package -w @abestar/extension
    ```
-   This writes `extension/dist/abestar-broadcast-<version>.zip`. Hand that file to other presenters.
+   This writes `extension/dist/abestar-broadcast-v2-<version>.zip`. Hand that file to other presenters.
 2. Unzip it into a folder you will keep (Chrome loads it from there on every start).
 3. In Chrome open `chrome://extensions`, turn on **Developer mode** (top right), click **Load unpacked**, and pick
    the folder.
-4. Pin the extension (puzzle icon in the toolbar → pin **Abestar Broadcast**).
+4. Pin the extension (puzzle icon in the toolbar → pin **Abestar Broadcast v2**).
 5. Right-click the icon → **Options**, paste the broadcast token, **Save**.
 6. Reload any Abestar tab that was already open, so the extension can read it.
 
@@ -96,7 +96,7 @@ any, Chrome shows a grey letter icon. Chrome's guidance: draw the 128 px icon at
 padding, keep the 16 and 32 px versions simple enough to read in the toolbar, and remember the status badge covers
 the bottom-right corner.
 
-To broadcast: open the Abestar presentation page, click the extension icon, **Start broadcast**, and show the QR code
+To broadcast: open the Abestar audience page (the event's /j/ link), choose the translation language, press **Enter event**, click the extension icon, **Start broadcast**, and show the QR code
 (or **Fullscreen QR** on the projector). **End broadcast** when the talk is over.
 
 ## 5. Verify
@@ -154,3 +154,12 @@ end the broadcast, and see "Broadcast ended" on the phone.
 | Lines are saved but the viewer doesn't update         | Realtime publication missing                                                   | Re-run the script; the "Realtime publishes" check must pass                                        |
 | Many viewers can't sign in at a venue                 | Anonymous sign-in rate limit per IP                                            | Raise `anonymous_users` in `supabase/config.toml`, re-run the script                               |
 | Script stops at "Pushing auth settings"               | `config.toml` declares a setting the plan does not allow (e.g. vector buckets) | `supabase config diff --project-ref <ref>`; set unused settings equal to the remote values, re-run |
+
+## Moving to Abestar v2
+
+1. Apply the new migration to the hosted project: `supabase db push`. v1 keeps working once it is applied.
+2. Build: `npm run package -w @abestar/extension`.
+3. In `chrome://extensions`, **Load unpacked** and pick `extension/dist/v2`. Keep v1 loaded from its own folder.
+4. Open the v2 extension's options and paste the broadcast token.
+
+v1 and v2 share one database, so only one of them can broadcast at a time.
