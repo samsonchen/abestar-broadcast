@@ -7,6 +7,10 @@ applies. The ElevenLabs account steps are in
 
 ## 0. Owner requirements (2026-10-23)
 
+> **Abestar v2 (2026-11-02):** R4 applies only to sessions from the v1 extension. The v2 extension sends only final
+> lines and starts its sessions with `tts_release = 'final'`, so a line is spoken as soon as it arrives (migration
+> `0007`).
+
 | #   | Requirement                                                                                                                                                                                                                                                                                                                                                                                   |
 | --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | R1  | TTS is **off** by default on the viewer.                                                                                                                                                                                                                                                                                                                                                      |

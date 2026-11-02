@@ -333,5 +333,63 @@ set local role authenticated;
 select is(public.tts_languages(), '{}', 'none while read-aloud is switched off for everyone');
 reset role;
 
+-- ---------------------------------------------------------------- final lines: no line delay (Abestar v2)
+update private.tts_settings set enabled = true;
+update private.tts_voices set enabled = true;
+
+select set_config('test.new', public.start_session('local-dev-token', 'Final talk', 'en', true, 'male', true, 'final')::text, true);
+select set_config('test.sid', current_setting('test.new')::jsonb ->> 'id', true);
+select set_config('test.pin', current_setting('test.new')::jsonb ->> 'pin', true);
+select is((select tts_release from public.sessions where id = current_setting('test.sid')::uuid), 'final',
+  'start_session stores the release mode');
+set local role authenticated;
+select pg_temp.as_viewer('11111111-1111-4111-8111-111111111111');
+select public.join_session(current_setting('test.pin'));
+select is(public.set_tts(current_setting('test.sid')::uuid, true, 'en'), true, 'a listener joins the final-lines talk');
+reset role;
+
+select set_config('test.requests', pg_temp.requests()::text, true);
+select pg_temp.line(7, 'Spoken at once.', 'en');
+select results_eq($$select status, released_by, text_version from pg_temp.job(7)$$,
+  $$values ('queued', 'final', 1)$$, 'a final line is released as soon as it is inserted');
+select is(pg_temp.requests(), current_setting('test.requests')::int + 1, 'one request is posted for it');
+select ok((select convert_from(body, 'utf8')::jsonb ->> 'next_text' is null
+  from net.http_request_queue order by id desc limit 1), 'with no next line as context');
+
+select pg_temp.line(7, 'Corrected after it was spoken.', 'en');
+select is(pg_temp.requests(), current_setting('test.requests')::int + 1, 'a late correction is not spoken again');
+
+select pg_temp.line(8, 'The next one.', 'en');
+select is((pg_temp.job(8)).released_by, 'final', 'the next line is released by itself, not by a later one');
+select is(pg_temp.requests(), current_setting('test.requests')::int + 2, 'and only it is posted');
+
+-- A quiet newest line with no job: the pause flush would release it in a next_line talk.
+insert into public.segments (session_id, epoch, seq, text, lang, created_at, updated_at)
+values (current_setting('test.sid')::uuid, 0, 9, 'Quiet line.', 'en', now() - interval '4 seconds', now() - interval '4 seconds');
+delete from private.tts_jobs where session_id = current_setting('test.sid')::uuid and seq = 9;
+select private.tts_flush();
+select is((pg_temp.job(9)).status, null, 'the pause flush leaves a final-lines talk alone');
+
+-- The installed v1 extension sends named arguments without p_tts_release.
+select set_config('test.new', public.start_session(p_token => 'local-dev-token', p_title => 'V1 talk',
+  p_force => true, p_tts => true, p_voice => 'male')::text, true);
+select set_config('test.sid', current_setting('test.new')::jsonb ->> 'id', true);
+select set_config('test.pin', current_setting('test.new')::jsonb ->> 'pin', true);
+select is((select tts_release from public.sessions where id = current_setting('test.sid')::uuid), 'next_line',
+  'a v1 call keeps the one-line delay');
+set local role authenticated;
+select pg_temp.as_viewer('11111111-1111-4111-8111-111111111111');
+select public.join_session(current_setting('test.pin'));
+select public.set_tts(current_setting('test.sid')::uuid, true, 'en');
+reset role;
+select pg_temp.line(1, 'V1 first line.', 'en-US');
+select is((pg_temp.job(1)).status, null, 'a v1 line waits for the next line');
+select pg_temp.line(2, 'V1 second line.', 'en-US');
+select results_eq($$select status, released_by from pg_temp.job(1)$$, $$values ('queued', 'next_line')$$,
+  'and the next line releases it');
+
+select throws_ok($$select public.start_session('local-dev-token', 'x', null, true, 'male', false, 'whenever')$$,
+  '23514', null, 'start_session rejects an unknown release mode');
+
 select * from finish();
 rollback;
