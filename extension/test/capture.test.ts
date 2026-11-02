@@ -1,43 +1,40 @@
-// M2 acceptance (PLAN.md §4.6, §8): capture driven by the mock, whose fidelity to the real page is
-// checked by fixtures/test/mock-fidelity.test.ts.
+// Capture driven by the mock, whose fidelity to the real page is checked by fixtures/test/mock-fidelity.test.ts.
 import type { CaptureMessage } from '@abestar/shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mountMock, SESSION_1, type MockAbestar } from '../../fixtures/mock-abestar';
-import settled from '../../fixtures/logs/settled-events.json';
+import { mountMock, type MockAbestar, type MockOptions } from '../../fixtures/mock-abestar';
+import { RECORDED_FROM, RECORDED_TO, timelineFromLog } from '../../fixtures/timeline';
+import type { RawRecord } from '../../fixtures/raw-logger';
+import log from '../../fixtures/logs/v2-session-1.json';
 import { startCapture, type Capture, type CaptureOptions } from '../src/content/capture';
-
-const SESSION_1_TEXTS = [
-  'Chinese test, testing translation.',
-  'Come and check out the Furry Kid Market.',
-  'Healthy and flexible for brisk walking, or enhanced maintenance for joint degeneration warnings.',
-  'Pet joint health self-assessment form.',
-];
 
 let sent: CaptureMessage[];
 let capture: Capture | undefined;
 
 const segments = () => sent.filter((m) => m.kind === 'segment');
-const resets = () => sent.filter((m) => m.kind === 'reset');
+const baselines = () => sent.flatMap((m) => (m.kind === 'baseline' ? [m.seq] : []));
 const statuses = () => sent.flatMap((m) => (m.kind === 'status' ? [m.status] : []));
 const advance = (ms: number) => vi.advanceTimersByTimeAsync(ms);
-const column = () => document.querySelector('[data-testid="col-right"]') as HTMLElement;
+const corrected = (seq: number, text = `Line ${seq}.`) => ({
+  seq,
+  status: 'corrected',
+  text,
+  lang: 'en',
+});
+const draft = (seq: number, text = `Draft ${seq}.`) => ({ seq, status: 'draft', text, lang: 'en' });
 
-function mount(): MockAbestar {
-  return mountMock(document.querySelector('main') as HTMLElement);
+async function page(options: MockOptions = {}): Promise<MockAbestar> {
+  const mock = mountMock(document.querySelector('main') as HTMLElement, options);
+  await advance(100); // the history batch
+  return mock;
 }
-
-function capture_(options?: CaptureOptions) {
+const start = (options?: CaptureOptions) => {
   capture = startCapture(document, (m) => sent.push(m), options);
-}
-
-/** Resolves a new card with `text` and lets it settle. */
-async function say(mock: MockAbestar, text: string) {
-  const n = mock.addPending();
-  await advance(1000);
-  mock.resolve(n, text);
-  await advance(2000);
-  return n;
-}
+};
+/** Capture on an empty feed, past the window in which the first batch of lines counts as history. */
+const startSettled = async () => {
+  start();
+  await advance(5_000);
+};
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
@@ -51,194 +48,223 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe('capture', () => {
-  it('turns the recorded session into exactly one event per card', async () => {
-    const mock = mount();
-    capture_();
-    mock.play(SESSION_1);
-    await advance(23_000);
+describe('final lines', () => {
+  it('sends a line once, with its corrected text, and never interim or draft text', async () => {
+    const mock = await page();
+    start();
+    mock.setInterim('Interim text');
+    await advance(500);
+    mock.setInterim(null);
+    mock.addLine(draft(1, 'Draft text'));
+    await advance(1500);
+    expect(segments()).toEqual([]);
 
-    expect(segments()).toEqual(
-      SESSION_1_TEXTS.map((text, i) => ({ kind: 'segment', seq: i + 1, text, lang: 'en-US' })),
-    );
-    expect(resets()).toEqual([{ kind: 'reset', reason: 'load' }]);
-    expect(statuses()).toEqual(['ok']);
+    mock.updateLine(1, 'corrected', 'Final text');
+    await advance(0);
+    expect(segments()).toEqual([{ kind: 'segment', seq: 1, text: 'Final text', lang: 'en' }]);
+
+    await advance(20_000);
+    expect(segments()).toHaveLength(1);
   });
 
-  it('never sends placeholder dots', async () => {
-    const mock = mount();
-    capture_();
-    mock.addPending();
+  it('sends a line that is added already corrected', async () => {
+    const mock = await page();
+    await startSettled();
+    mock.addLine(corrected(1));
+    await advance(0);
+    expect(segments().map((m) => m.seq)).toEqual([1]);
+  });
+
+  it('turns the recorded session into one send per line, with the final text', async () => {
+    const steps = timelineFromLog(log as RawRecord[], RECORDED_FROM, RECORDED_TO);
+    const mock = await page();
+    await startSettled();
+    mock.play(steps);
+    await advance(RECORDED_TO - RECORDED_FROM + 1000);
+
+    const real = (log as RawRecord[]).filter(
+      (r) =>
+        r.t >= RECORDED_FROM && r.t < RECORDED_TO && r.st === 'corrected' && r.id !== 'interim',
+    );
+    expect(segments().map((m) => m.text)).toEqual(real.map((r) => r.text));
+    const seqs = segments().map((m) => m.seq);
+    expect(new Set(seqs).size).toBe(seqs.length);
+  });
+
+  it('keeps each line in its own language across a language switch', async () => {
+    const mock = await page();
+    await startSettled();
+    mock.addLine(corrected(1));
+    mock.addLine({ seq: 2, status: 'corrected', text: 'こんにちは', lang: 'ja' });
+    await advance(0);
+    expect(segments().map((m) => m.kind === 'segment' && m.lang)).toEqual(['en', 'ja']);
+  });
+
+  it('skips a corrected line whose text has not arrived, and sends it when it does', async () => {
+    const mock = await page();
+    await startSettled();
+    mock.addLine({ seq: 1, status: 'corrected', text: '', lang: 'en' });
+    await advance(0);
+    expect(segments()).toEqual([]);
+    mock.updateLine(1, 'corrected', 'Now it has text.');
+    await advance(0);
+    expect(segments().map((m) => m.seq)).toEqual([1]);
+  });
+});
+
+describe('a line stuck in draft', () => {
+  it('is sent after 10 s, and updated once if it is corrected later', async () => {
+    const mock = await page();
+    start();
+    mock.addLine(draft(1, 'Stuck text'));
+    await advance(9_999);
+    expect(segments()).toEqual([]);
+    await advance(1);
+    expect(segments()).toEqual([{ kind: 'segment', seq: 1, text: 'Stuck text', lang: 'en' }]);
+
+    mock.updateLine(1, 'corrected', 'Late correction');
+    await advance(0);
+    expect(segments().map((m) => m.kind === 'segment' && m.text)).toEqual([
+      'Stuck text',
+      'Late correction',
+    ]);
+    await advance(20_000);
+    expect(segments()).toHaveLength(2);
+  });
+
+  it('is not sent early by text changes while a draft', async () => {
+    const mock = await page();
+    start();
+    mock.addLine(draft(1, 'One'));
+    await advance(5_000);
+    mock.updateLine(1, 'draft', 'One more');
+    await advance(5_000);
+    expect(segments().map((m) => m.kind === 'segment' && m.text)).toEqual(['One more']);
+  });
+
+  it('treats an unknown status like a draft', async () => {
+    const mock = await page();
+    start();
+    mock.addLine({ seq: 1, status: 'reviewing', text: 'Unknown', lang: 'en' });
+    await advance(0);
+    expect(segments()).toEqual([]);
     await advance(10_000);
+    expect(segments().map((m) => m.seq)).toEqual([1]);
+  });
+
+  it('is cancelled by stop', async () => {
+    const mock = await page();
+    start();
+    mock.addLine(draft(1));
+    await advance(0);
+    capture?.stop();
+    await advance(20_000);
+    expect(segments()).toEqual([]);
+  });
+});
+
+describe('baseline', () => {
+  it('does not send what is on screen when the broadcast starts, and reports it', async () => {
+    const mock = await page({ history: [corrected(1), corrected(2)] });
+    start();
+    await advance(0);
+    expect(baselines()).toEqual([2]);
+    mock.addLine(corrected(3));
+    await advance(0);
+    expect(segments().map((m) => m.seq)).toEqual([3]);
+  });
+
+  it('still sends a draft that was on screen when the broadcast started', async () => {
+    const mock = await page({ history: [corrected(1), draft(2)] });
+    start();
+    await advance(0);
+    expect(baselines()).toEqual([1]);
+    mock.updateLine(2, 'corrected', 'Two.');
+    await advance(0);
+    expect(segments().map((m) => m.seq)).toEqual([2]);
+  });
+
+  it('counts history that arrives just after an empty feed appears', async () => {
+    mountMock(document.querySelector('main') as HTMLElement, {
+      history: [corrected(1), corrected(2)],
+    });
+    start(); // before the history batch, as when the feed has just appeared
+    await advance(100);
+    expect(baselines()).toEqual([2]);
     expect(segments()).toEqual([]);
   });
 
-  it('sends a second event when a settled card changes', async () => {
-    const mock = mount();
-    capture_();
-    const n = await say(mock, 'Chen Shih-chung is practically about to overtake him.');
-    const p = column().querySelector(`[data-testid="translation-${n}"] p`) as HTMLElement;
-    p.textContent = 'Chiang Wan-an is practically about to overtake him.';
-    await advance(1000);
-
-    expect(segments().map((m) => m.text)).toEqual([
-      'Chen Shih-chung is practically about to overtake him.',
-      'Chiang Wan-an is practically about to overtake him.',
-    ]);
-    expect(new Set(segments().map((m) => m.seq))).toEqual(new Set([n]));
-  });
-
-  it('ignores mutations that leave the text unchanged', async () => {
-    const mock = mount();
-    capture_();
-    const n = await say(mock, 'Same text.');
-    const card = column().querySelector(`[data-testid="translation-${n}"]`) as HTMLElement;
-    card.className += ' highlighted';
-    await advance(1000);
-    expect(segments()).toHaveLength(1);
-  });
-
-  it('starts a new epoch when the broom clears the column, and resends numbers from 1', async () => {
-    const mock = mount();
-    capture_();
-    for (const event of settled.slice(0, 2)) await say(mock, event.text);
-    mock.clear();
-    await advance(10);
-    await say(mock, (settled[2] as (typeof settled)[number]).text);
-
-    expect(resets().map((m) => m.reason)).toEqual(['load', 'clear']);
-    expect(segments().map((m) => m.seq)).toEqual([1, 2, 1]);
-  });
-
-  it('detects a restart even when the clear and the new card land in one render', async () => {
-    const mock = mount();
-    capture_();
-    await say(mock, 'First talk, line one.');
-    await say(mock, 'First talk, line two.');
-    const list = column().firstElementChild as HTMLElement;
-    const fresh = list
-      .querySelector('[data-testid="translation-1"]')
-      ?.cloneNode(true) as HTMLElement;
-    (fresh.querySelector('p') as HTMLElement).textContent = 'Second talk, line one.';
-    for (const card of Array.from(list.querySelectorAll('[data-testid^="translation-"]')))
-      card.remove();
-    list.prepend(fresh);
-    await advance(1000);
-
-    expect(resets().map((m) => m.reason)).toEqual(['load', 'clear']);
-    expect(segments().at(-1)).toMatchObject({ seq: 1, text: 'Second talk, line one.' });
-  });
-
-  it('does not reset when old cards are dropped but numbering continues', async () => {
-    const mock = mount();
-    capture_();
-    await say(mock, 'Line one.');
-    await say(mock, 'Line two.');
-    column().querySelector('[data-testid="translation-1"]')?.remove();
-    await say(mock, 'Line three.');
-
-    expect(resets()).toHaveLength(1);
-    expect(segments().map((m) => m.seq)).toEqual([1, 2, 3]);
-  });
-
-  it('does not reset when all old cards are replaced by higher numbers in one render', async () => {
-    const mock = mount();
-    capture_();
-    await say(mock, 'Line one.');
-    const list = column().firstElementChild as HTMLElement;
-    const next = list
-      .querySelector('[data-testid="translation-1"]')
-      ?.cloneNode(true) as HTMLElement;
-    next.setAttribute('data-testid', 'translation-2');
-    (next.querySelector('p') as HTMLElement).textContent = 'Line two.';
-    list.querySelector('[data-testid="translation-1"]')?.remove();
-    list.prepend(next);
-    await advance(1000);
-
-    expect(resets()).toHaveLength(1);
-    expect(segments().map((m) => m.seq)).toEqual([1, 2]);
-  });
-
-  it('re-attaches after React remounts the column, without resending or resetting', async () => {
-    const mock = mount();
-    capture_();
-    await say(mock, 'Before the remount.');
-
-    const old = column();
-    const remounted = old.cloneNode(true) as HTMLElement;
-    old.replaceWith(remounted);
-    await advance(1000);
-
-    const card = remounted
-      .querySelector('[data-testid="translation-1"]')
-      ?.cloneNode(true) as HTMLElement;
-    card.setAttribute('data-testid', 'translation-2');
-    (card.querySelector('p') as HTMLElement).textContent = 'After the remount.';
-    remounted.firstElementChild?.prepend(card);
-    await advance(1000);
-
-    expect(statuses()).toEqual(['ok', 'detached', 'ok']);
-    expect(resets()).toHaveLength(1);
-    expect(segments().map((m) => m.text)).toEqual(['Before the remount.', 'After the remount.']);
-  });
-
-  it('treats a remounted column showing only unseen text as a restart', async () => {
-    const mock = mount();
-    capture_();
-    await say(mock, 'Old talk.');
-
-    const remounted = column().cloneNode(true) as HTMLElement;
-    (remounted.querySelector('[data-testid="translation-1"] p') as HTMLElement).textContent =
-      'New talk.';
-    column().replaceWith(remounted);
-    await advance(1000);
-
-    expect(resets().map((m) => m.reason)).toEqual(['load', 'clear']);
-    expect(segments().at(-1)).toMatchObject({ seq: 1, text: 'New talk.' });
-  });
-
-  it('reports a missing column after the timeout, then recovers', async () => {
-    capture_({ columnTimeoutMs: 10_000 });
-    await advance(9_000);
-    expect(statuses()).toEqual([]);
-    await advance(2_000);
-    expect(statuses()).toEqual(['column-not-found']);
-
-    const mock = mount();
-    await advance(10);
-    await say(mock, 'Late column.');
-    expect(statuses()).toEqual(['column-not-found', 'ok']);
-    expect(segments()).toHaveLength(1);
-  });
-
-  describe('starting mid-talk', () => {
-    async function talkInProgress() {
-      const mock = mount();
-      await advance(10);
-      mock.addPending();
-      mock.addPending();
-      await advance(500);
-      mock.resolve(1, 'Already on screen.');
-      await advance(2000);
-      return mock;
-    }
-
-    it('skips what is already on screen', async () => {
-      const mock = await talkInProgress();
-      capture_();
-      mock.resolve(2, 'Arrives after start.');
-      await advance(2000);
-      expect(segments().map((m) => m.text)).toEqual(['Arrives after start.']);
+  it('counts history when the broadcast starts on the language picker', async () => {
+    const mock = mountMock(document.querySelector('main') as HTMLElement, {
+      picker: true,
+      history: [corrected(1), corrected(2)],
     });
+    start();
+    await advance(60_000); // the presenter takes their time to choose a language
+    expect(statuses()).toContain('column-not-found');
+    mock.enter();
+    await advance(100);
+    expect(statuses().at(-1)).toBe('ok');
+    expect(baselines()).toEqual([2]);
+    expect(segments()).toEqual([]);
+
+    mock.addLine(corrected(3));
+    await advance(0);
+    expect(segments().map((m) => m.seq)).toEqual([3]);
+  });
+
+  it('starts from 0 on an event with no history', async () => {
+    const mock = await page();
+    start();
+    await advance(5_000);
+    expect(baselines()).toEqual([0]);
+    mock.addLine(corrected(1));
+    await advance(0);
+    expect(segments().map((m) => m.seq)).toEqual([1]);
+  });
+});
+
+describe('recovering', () => {
+  it('sends the lines missed during a reload, and reports no new baseline', async () => {
+    const history = [corrected(1), corrected(2), corrected(3), corrected(4)];
+    mountMock(document.querySelector('main') as HTMLElement, { history });
+    start({ resumeAfterSeq: 2 });
+    await advance(100);
+    expect(segments().map((m) => m.seq)).toEqual([3, 4]);
+    expect(baselines()).toEqual([]);
+  });
+
+  it('sends lines that arrive in a batch after a dropped connection', async () => {
+    const mock = await page({ history: [corrected(1)] });
+    start();
+    await advance(0);
+    for (const seq of [2, 3, 4, 5]) mock.addLine(corrected(seq));
+    await advance(0);
+    expect(segments().map((m) => m.seq)).toEqual([2, 3, 4, 5]);
+  });
+
+  it('does not send lines again when React remounts the feed', async () => {
+    const mock = await page({ history: [corrected(1)] });
+    start();
+    mock.addLine(corrected(2));
+    await advance(0);
+    mock.remountFeed();
+    await advance(100);
+    expect(segments().map((m) => m.seq)).toEqual([2]);
+
+    mock.addLine(corrected(3));
+    await advance(0);
+    expect(segments().map((m) => m.seq)).toEqual([2, 3]);
+    expect(statuses()).toEqual(['ok', 'detached', 'ok']);
   });
 
   it('sends nothing after stop', async () => {
-    const mock = mount();
-    capture_();
-    const n = mock.addPending();
+    const mock = await page();
+    start();
+    await advance(5_000);
     capture?.stop();
-    mock.resolve(n, 'Too late.');
-    await advance(2000);
+    mock.addLine(corrected(1));
+    await advance(0);
     expect(segments()).toEqual([]);
   });
 });

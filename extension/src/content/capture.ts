@@ -1,14 +1,18 @@
-// Turns DOM changes in Abestar's translation column into CaptureMessages (PLAN.md §4.3).
-// Pure DOM logic: content/index.ts connects it to the background worker.
+// Turns Abestar's subtitle feed into CaptureMessages. Pure DOM logic: content/index.ts connects it to the worker.
+// A line is sent once, when it is final. See docs/superpowers/specs/2026-11-02-abestar-v2-design.md.
 
 import type { CaptureMessage } from '@abestar/shared';
-import { CARD, CARD_TESTID, CARD_TEXT, PLACEHOLDER, TRANSLATION_COLUMN } from './selectors';
+import { CORRECTED, FEED, LINE, SEG_ID } from './selectors';
 
 export interface CaptureOptions {
-  /** Quiet time after a card's last mutation before it is read. */
-  debounceMs?: number;
-  /** How long to wait for the column before reporting `column-not-found`. */
-  columnTimeoutMs?: number;
+  /** After a reload: lines up to here were already sent. Null: this is a new broadcast, take it from the page. */
+  resumeAfterSeq?: number | null;
+  /** A line still not final after this long is sent as it is. */
+  draftTimeoutMs?: number;
+  /** How long an empty feed may wait for its history before counting as an event with none. */
+  historyWindowMs?: number;
+  /** How long to wait for the feed before reporting `column-not-found`. */
+  feedTimeoutMs?: number;
 }
 
 export interface Capture {
@@ -17,166 +21,145 @@ export interface Capture {
 
 type Timer = ReturnType<typeof setTimeout>;
 
-const ELEMENT_NODE = 1;
 const OBSERVE: MutationObserverInit = {
   subtree: true,
   childList: true,
   characterData: true,
   attributes: true,
+  attributeFilter: ['data-status'],
 };
 
 export function startCapture(
   doc: Document,
   send: (message: CaptureMessage) => void,
-  { debounceMs = 400, columnTimeoutMs = 10_000 }: CaptureOptions = {},
+  {
+    resumeAfterSeq = null,
+    draftTimeoutMs = 10_000,
+    historyWindowMs = 5_000,
+    feedTimeoutMs = 10_000,
+  }: CaptureOptions = {},
 ): Capture {
-  /** Text last sent per card number, for this epoch. */
-  const lastSent = new Map<number, string>();
-  /** Card elements in the column after the last change. */
-  let present = new Set<Element>();
-  let maxSeq = 0;
-  const timers = new Map<Element, Timer>();
-  let column: Element | null = null;
-  let firstAttach = true;
+  /** Lines at or below this are not sent. Null until known. */
+  let baseline = resumeAfterSeq;
+  /** Lines sent with their final text. */
+  const finished = new Set<number>();
+  /** Lines sent by the draft timeout, which may still be corrected. */
+  const sentAsDraft = new Set<number>();
+  const draftTimers = new Map<number, Timer>();
+  let feed: Element | null = null;
   let notFoundTimer: Timer | undefined;
+  let historyTimer: Timer | undefined;
 
-  const seqOf = (card: Element): number | null => {
-    const match = CARD_TESTID.exec(card.getAttribute('data-testid') ?? '');
+  const seqOf = (line: Element): number | null => {
+    const match = SEG_ID.exec(line.getAttribute('data-seg-id') ?? '');
     return match ? Number(match[1]) : null;
   };
-  const cardsIn = (root: ParentNode) =>
-    Array.from(root.querySelectorAll(CARD)).filter((card) => seqOf(card) !== null);
-  const textOf = (card: Element) => card.querySelector(CARD_TEXT)?.textContent?.trim() ?? '';
+  const textOf = (line: Element) => line.textContent?.trim() ?? '';
+  const isFinal = (line: Element) => line.getAttribute('data-status') === CORRECTED;
+  const linesIn = (root: ParentNode) => Array.from(root.querySelectorAll(LINE));
 
-  function read(card: Element) {
-    timers.delete(card);
-    const seq = seqOf(card);
-    if (seq === null || !card.isConnected || card.querySelector(PLACEHOLDER)) return;
-    const text = textOf(card);
-    if (!text || lastSent.get(seq) === text) return;
-    lastSent.set(seq, text);
-    send({ kind: 'segment', seq, text, lang: card.getAttribute('lang') });
+  const sendLine = (line: Element, seq: number, text: string) =>
+    send({ kind: 'segment', seq, text, lang: line.getAttribute('lang') });
+
+  function draftTimedOut(seq: number) {
+    draftTimers.delete(seq);
+    if (!feed) return;
+    const line = linesIn(feed).find((el) => seqOf(el) === seq);
+    const text = line ? textOf(line) : '';
+    if (!line || !text || isFinal(line)) return;
+    sentAsDraft.add(seq);
+    sendLine(line, seq, text);
   }
 
-  function schedule(card: Element) {
-    clearTimeout(timers.get(card));
-    timers.set(
-      card,
-      setTimeout(() => read(card), debounceMs),
-    );
-  }
-
-  function reset(reason: 'load' | 'clear') {
-    for (const timer of timers.values()) clearTimeout(timer);
-    timers.clear();
-    lastSent.clear();
-    maxSeq = 0;
-    send({ kind: 'reset', reason });
-  }
-
-  /**
-   * Detects the broom / a new presentation. Within one column React keeps card elements, so a restart
-   * is: every previous card element is gone and numbering is back at or below the old maximum (an empty
-   * column counts). A remounted column has all-new elements; there, it is a restart only if no finished
-   * card still shows text we sent.
-   */
-  function track(cards: Element[], remounted = false) {
-    const seqs = cards.map(seqOf).filter((seq) => seq !== null);
-    let restarted: boolean;
-    if (remounted) {
-      const finished = cards.filter((card) => !card.querySelector(PLACEHOLDER) && textOf(card));
-      restarted =
-        lastSent.size > 0 &&
-        finished.length > 0 &&
-        !finished.some((card) => lastSent.get(seqOf(card) ?? -1) === textOf(card));
-    } else {
-      restarted =
-        present.size > 0 &&
-        !Array.from(present).some((card) => card.isConnected) &&
-        (seqs.length === 0 || Math.min(...seqs) <= maxSeq);
-    }
-    if (restarted) reset('clear');
-    present = new Set(cards);
-    for (const seq of seqs) maxSeq = Math.max(maxSeq, seq);
-  }
-
-  const columnObserver = new MutationObserver((mutations) => {
-    if (!column) return;
-    const touched = new Set<Element>();
-    for (const m of mutations) {
-      const node =
-        m.target.nodeType === ELEMENT_NODE ? (m.target as Element) : m.target.parentElement;
-      const card = node?.closest(CARD);
-      if (card) touched.add(card);
-      for (const added of Array.from(m.addedNodes)) {
-        if (added.nodeType !== ELEMENT_NODE) continue;
-        const el = added as Element;
-        if (el.matches(CARD)) touched.add(el);
-        for (const inner of cardsIn(el)) touched.add(inner);
+  function scan() {
+    if (!feed || baseline === null) return;
+    for (const line of linesIn(feed)) {
+      const seq = seqOf(line);
+      if (seq === null || seq <= baseline || finished.has(seq)) continue;
+      const text = textOf(line);
+      if (isFinal(line)) {
+        if (!text) continue;
+        clearTimeout(draftTimers.get(seq));
+        draftTimers.delete(seq);
+        finished.add(seq);
+        sendLine(line, seq, text);
+      } else if (!draftTimers.has(seq) && !sentAsDraft.has(seq)) {
+        draftTimers.set(
+          seq,
+          setTimeout(() => draftTimedOut(seq), draftTimeoutMs),
+        );
       }
     }
-    track(cardsIn(column));
-    for (const card of touched) if (card.isConnected) schedule(card);
+  }
+
+  /** Whatever is final on screen now is history. Drafts are still to come. */
+  function takeBaseline() {
+    clearTimeout(historyTimer);
+    historyTimer = undefined;
+    if (!feed) return; // replaced during the window: attach() arms the timer again
+    const seqs = linesIn(feed)
+      .filter(isFinal)
+      .map(seqOf)
+      .filter((seq) => seq !== null);
+    baseline = Math.max(0, ...seqs);
+    send({ kind: 'baseline', seq: baseline });
+    scan();
+  }
+
+  const feedObserver = new MutationObserver(() => {
+    if (baseline === null) {
+      if (feed && linesIn(feed).length > 0) takeBaseline();
+    } else {
+      scan();
+    }
   });
 
-  function waitForColumn() {
+  function waitForFeed() {
     clearTimeout(notFoundTimer);
     notFoundTimer = setTimeout(
       () => send({ kind: 'status', status: 'column-not-found' }),
-      columnTimeoutMs,
+      feedTimeoutMs,
     );
   }
 
   function attach(found: Element) {
-    column = found;
+    feed = found;
     clearTimeout(notFoundTimer);
     send({ kind: 'status', status: 'ok' });
-    const cards = cardsIn(found);
-    track(cards, !firstAttach);
-    if (firstAttach) {
-      // Start mid-talk: what is already on screen counts as sent.
-      for (const card of cards) {
-        const seq = seqOf(card);
-        const text = textOf(card);
-        if (seq !== null && text && !card.querySelector(PLACEHOLDER)) lastSent.set(seq, text);
-      }
-    } else {
-      // A React remount: unchanged texts are dropped by lastSent.
-      for (const card of cards) schedule(card);
-    }
-    firstAttach = false;
-    columnObserver.observe(found, OBSERVE);
+    feedObserver.observe(found, OBSERVE);
+    if (baseline !== null) scan();
+    else if (linesIn(found).length > 0) takeBaseline();
+    else historyTimer ??= setTimeout(takeBaseline, historyWindowMs);
   }
 
   function detach() {
-    columnObserver.disconnect();
-    column = null;
+    feedObserver.disconnect();
+    feed = null;
     send({ kind: 'status', status: 'detached' });
-    waitForColumn();
+    waitForFeed();
   }
 
-  // React may unmount and remount the column; follow it.
+  // The feed appears after the language picker, and React may replace it.
   const pageObserver = new MutationObserver(() => {
-    if (column && !column.isConnected) detach();
-    if (!column) {
-      const found = doc.querySelector(TRANSLATION_COLUMN);
+    if (feed && !feed.isConnected) detach();
+    if (!feed) {
+      const found = doc.querySelector(FEED);
       if (found) attach(found);
     }
   });
-
-  send({ kind: 'reset', reason: 'load' });
   pageObserver.observe(doc, { subtree: true, childList: true });
-  const initial = doc.querySelector(TRANSLATION_COLUMN);
+  const initial = doc.querySelector(FEED);
   if (initial) attach(initial);
-  else waitForColumn();
+  else waitForFeed();
 
   return {
     stop() {
       pageObserver.disconnect();
-      columnObserver.disconnect();
+      feedObserver.disconnect();
       clearTimeout(notFoundTimer);
-      for (const timer of timers.values()) clearTimeout(timer);
-      timers.clear();
+      clearTimeout(historyTimer);
+      for (const timer of draftTimers.values()) clearTimeout(timer);
+      draftTimers.clear();
     },
   };
 }

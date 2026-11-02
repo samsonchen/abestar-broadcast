@@ -1,17 +1,17 @@
-// Every Abestar DOM selector lives here and nowhere else (PLAN.md §4.3, §9).
-// Verified against the live page on 2026-10-22; see fixtures/logs/raw-session-1.json.
+// Every Abestar DOM selector lives here and nowhere else.
+// Verified against the live page on 2026-11-02; see fixtures/logs/v2-session-1.json and v2-page-excerpt.html.
 
-/** The scrollable translation column. */
-export const TRANSLATION_COLUMN = '[data-testid="col-right"]';
+/** The scrollable list of lines. Appears only after the language picker. */
+export const FEED = '[data-testid="subtitle-feed"]';
 
-/** A translation card, finished or pending (excludes the dots `<p>` inside a pending card). */
-export const CARD = '[data-testid^="translation-"]:not([data-testid^="translation-dots"])';
+/** A received line. The line still being spoken is `subtitle-interim`, which is not captured. */
+export const LINE = '[data-testid="subtitle-line"]';
 
-/** Present inside a card while it is still a placeholder. */
-export const PLACEHOLDER = '[data-testid^="translation-dots"]';
+/** `data-status` of a final line: its text never changes again. */
+export const CORRECTED = 'corrected';
 
-/** The text paragraph of a finished card. */
-export const CARD_TEXT = 'p:not([data-testid])';
+/** "Jump to latest", shown only while scrolled back. It has no test ID and its label is translated. */
+export const JUMP_BUTTON = '[data-testid="subtitle-feed"] ~ button';
 
-/** Card testid → sequence number N. */
-export const CARD_TESTID = /^translation-(\d+)$/;
+/** `data-seg-id` → sequence number N, e.g. `mvy16ds3-19`. */
+export const SEG_ID = /-(\d+)$/;

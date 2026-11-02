@@ -25,7 +25,7 @@ export interface Segment {
   epoch: number;
   seq: number;
   text: string;
-  /** Abestar's `lang` attribute of the card, e.g. `en-US`; null from extensions before 0.2.0. */
+  /** Abestar's `lang` attribute of the line, e.g. `en`; null from extensions before 0.2.0. */
   lang: string | null;
   prev_text: string | null;
   version: number;
@@ -36,7 +36,8 @@ export interface Segment {
 // content script → background (the background worker stamps the epoch)
 export type CaptureMessage =
   | { kind: 'segment'; seq: number; text: string; lang: string | null }
-  | { kind: 'reset'; reason: 'load' | 'clear' }
+  /** Lines at or below `seq` were on screen when the broadcast started, and are not sent. */
+  | { kind: 'baseline'; seq: number }
   | { kind: 'status'; status: 'ok' | 'column-not-found' | 'detached' };
 
 /** One read-aloud clip on the private Realtime channel `tts:<session_id>`, event `audio` (docs/tts-plan.md §6). */
