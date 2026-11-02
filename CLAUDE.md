@@ -4,6 +4,8 @@ Rebroadcasts the translation of Abestar v2 (live.abestar.com.tw) to phones: Chro
 The v1 extension lives at the `abestar_v1` tag; its sessions still use the same database.
 Read `PLAN.md` before starting a milestone; its §0 owner decisions override the rest of it.
 
+The working branch is `abestar-v2`. Work and commit there; do not merge it to `main` unless the owner asks.
+
 ## Commands
 
 ```sh
