@@ -1,6 +1,6 @@
 // Service worker: wires Broadcaster to chrome.* (PLAN.md §4.4).
 
-import { DEFAULT_DEBOUNCE_MS, effectiveConfig, type Settings } from '../config';
+import { effectiveConfig, type Settings } from '../config';
 import type { BroadcastState, Status, ToBackground, ToContent } from '../messages';
 import { fetchCredits, supabaseApi } from './api';
 import { Broadcaster, type QueueItem } from './broadcaster';
@@ -46,7 +46,6 @@ const broadcaster = new Broadcaster({
         : chrome.storage.local.remove('liveSessionId'),
   },
   getToken: async () => (await settings()).token,
-  getDebounceMs: async () => (await settings()).debounceMs ?? DEFAULT_DEBOUNCE_MS,
   tell: async (tabId: number, message: ToContent) => {
     try {
       await chrome.tabs.sendMessage(tabId, message);

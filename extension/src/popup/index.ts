@@ -20,7 +20,7 @@ const STATUS_TEXT: Record<Status, [string, 'live' | 'warn' | 'bad']> = {
   idle: ['', 'live'],
   live: ['● Live', 'live'],
   reconnecting: ['● Reconnecting…', 'warn'],
-  'column-not-found': ['● Translation column not found on the page', 'bad'],
+  'column-not-found': ['● Choose a language and press Enter event on the Abestar page', 'warn'],
   'ended-remotely': ['', 'bad'],
   'ended-tab-closed': ['', 'bad'],
   'ended-restart': ['', 'bad'],
@@ -41,7 +41,7 @@ const START_ERRORS: Record<StartError, string> = {
   'session-live': '',
   busy: 'Another tab is already broadcasting.',
   'not-abestar':
-    'Open the Abestar presentation page in this tab first (reload it if the extension was just installed).',
+    'Open the Abestar audience page in this tab first (reload it if the extension was just installed).',
   network: 'Could not reach the server. Check the connection and try again.',
 };
 

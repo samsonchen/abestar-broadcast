@@ -3,7 +3,7 @@
 import type { CaptureMessage, Voice } from '@abestar/shared';
 
 /** Background → content script. */
-export type ToContent = { kind: 'ping' } | { kind: 'start'; debounceMs: number } | { kind: 'stop' };
+export type ToContent = { kind: 'ping' } | { kind: 'start' } | { kind: 'stop' };
 
 /** Content script / popup → background. */
 export type ToBackground =
@@ -16,7 +16,7 @@ export type ToBackground =
   | { kind: 'dismiss' };
 
 /** Reply to `hello`: whether this tab should capture (it is the broadcasting tab, e.g. after a reload). */
-export type HelloReply = { capture: false } | { capture: true; debounceMs: number };
+export type HelloReply = { capture: false } | { capture: true; resumeAfterSeq: number | null };
 
 export type StartError =
   'no-token' | 'invalid-token' | 'session-live' | 'busy' | 'not-abestar' | 'network';
@@ -49,6 +49,8 @@ export interface Broadcast {
   voice?: Voice;
   tabId: number;
   epoch: number;
+  /** The highest line the worker has, including those on screen at the start. Null until the page reports it. */
+  lastSeq: number | null;
   startedAt: number;
 }
 

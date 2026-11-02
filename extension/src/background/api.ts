@@ -62,6 +62,7 @@ export function supabaseApi(config: ExtensionConfig): Api {
         p_force: force,
         p_tts: tts,
         p_voice: voice,
+        p_tts_release: 'final', // Abestar v2 sends only final lines, so read-aloud need not wait for the next one
       }),
     upsertSegment: (token, sessionId, epoch, seq, text, lang) =>
       call('upsert_segment', {

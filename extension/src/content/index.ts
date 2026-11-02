@@ -3,7 +3,7 @@
 import type { CaptureMessage } from '@abestar/shared';
 import type { HelloReply, ToBackground, ToContent } from '../messages';
 import { startCapture, type Capture } from './capture';
-import { followBottom, type Follow } from './follow';
+import { followLatest, type Follow } from './follow';
 import { BROADCAST_OFF, BROADCAST_ON } from './signals';
 
 declare global {
@@ -20,7 +20,7 @@ if (!window.__abestarBroadcast) {
   let follow: Follow | null = null;
 
   const toBackground = (message: ToBackground) => chrome.runtime.sendMessage(message);
-  // A settled card never changes again, so a lost message would be a lost line: retry while the
+  // A final line never changes again, so a lost message would be a lost line: retry while the
   // worker restarts.
   const send = async (message: CaptureMessage, attempt = 0): Promise<void> => {
     try {
@@ -30,16 +30,16 @@ if (!window.__abestarBroadcast) {
     }
   };
 
-  const start = (debounceMs: number) => {
+  const start = (resumeAfterSeq: number | null) => {
     capture?.stop();
     follow?.stop();
-    capture = startCapture(document, (m) => void send(m), { debounceMs });
-    follow = followBottom(document);
+    capture = startCapture(document, (m) => void send(m), { resumeAfterSeq });
+    follow = followLatest(document);
     document.dispatchEvent(new Event(BROADCAST_ON)); // keep Abestar typing in a background tab
   };
 
   chrome.runtime.onMessage.addListener((message: ToContent, _sender, reply) => {
-    if (message.kind === 'start') start(message.debounceMs);
+    if (message.kind === 'start') start(null);
     if (message.kind === 'stop') {
       capture?.stop();
       follow?.stop();
@@ -50,10 +50,10 @@ if (!window.__abestarBroadcast) {
     reply({ ok: true });
   });
 
-  // After a reload of the broadcasting tab, carry on in a new epoch.
+  // After a reload of the broadcasting tab, carry on from the last line the worker has.
   void (toBackground({ kind: 'hello' }) as Promise<HelloReply>)
     .then((r) => {
-      if (r.capture) start(r.debounceMs);
+      if (r.capture) start(r.resumeAfterSeq);
     })
     .catch(() => {});
 }

@@ -40,7 +40,6 @@ export interface Deps {
   store: Store;
   liveSession: LiveSession;
   getToken(): Promise<string | undefined>;
-  getDebounceMs(): Promise<number>;
   /** Sends to the content script in a tab; false if nothing answered (not an Abestar page). */
   tell(tabId: number, message: ToContent): Promise<boolean>;
   showStatus(status: Status): void;
@@ -109,15 +108,13 @@ export class Broadcaster {
       voice: opts.voice,
       tabId: opts.tabId,
       epoch: 0,
+      lastSeq: null,
       startedAt: Date.now(),
     };
     this.queue = [];
     this.backoffMs = 1000;
     await this.update({ broadcast, status: 'live', sent: 0, lastError: null });
-    await this.deps.tell(opts.tabId, {
-      kind: 'start',
-      debounceMs: await this.deps.getDebounceMs(),
-    });
+    await this.deps.tell(opts.tabId, { kind: 'start' });
     return { ok: true };
   }
 
@@ -177,12 +174,11 @@ export class Broadcaster {
     if (this.state.status.startsWith('ended-')) await this.update({ ...IDLE_STATE });
   }
 
-  /** A content script (re)loaded; tell it whether to capture. */
+  /** A content script (re)loaded; tell it whether to capture, and from where. */
   async hello(tabId: number): Promise<HelloReply> {
     await this.ready;
     if (this.state.broadcast?.tabId !== tabId) return { capture: false };
-    // A reload: whatever Abestar shows now is not new.
-    return { capture: true, debounceMs: await this.deps.getDebounceMs() };
+    return { capture: true, resumeAfterSeq: this.state.broadcast.lastSeq };
   }
 
   async capture(tabId: number, message: CaptureMessage): Promise<void> {
@@ -190,8 +186,13 @@ export class Broadcaster {
     const { broadcast } = this.state;
     if (!broadcast || broadcast.tabId !== tabId) return;
 
-    if (message.kind === 'reset') {
-      await this.update({ broadcast: { ...broadcast, epoch: broadcast.epoch + 1 } });
+    const raiseLastSeq = (seq: number) => ({
+      ...broadcast,
+      lastSeq: Math.max(broadcast.lastSeq ?? 0, seq),
+    });
+
+    if (message.kind === 'baseline') {
+      await this.update({ broadcast: raiseLastSeq(message.seq) });
     } else if (message.kind === 'status') {
       if (message.status === 'column-not-found') await this.update({ status: 'column-not-found' });
       else if (message.status === 'ok' && this.state.status !== 'reconnecting')
@@ -207,7 +208,7 @@ export class Broadcaster {
       // Not yet sent: only the newest text matters.
       if (i > 0 || (i === 0 && !this.flushing)) this.queue[i] = item;
       else this.queue.push(item);
-      await this.update({});
+      await this.update({ broadcast: raiseLastSeq(message.seq) });
       void this.flush();
     }
   }

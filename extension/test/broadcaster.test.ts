@@ -65,7 +65,6 @@ function worker(overrides: Partial<Deps> = {}) {
       set: async (id) => void (liveSessionId = id ?? undefined),
     },
     getToken: async () => token,
-    getDebounceMs: async () => 400,
     tell: async (tabId, message) => {
       told.push({ tabId, message });
       return tabId === TAB || tabId === OTHER_TAB;
@@ -105,7 +104,7 @@ describe('starting', () => {
     expect(fake.api.startSession).toHaveBeenCalledWith('token', 'Talk', false, true, 'female');
     expect(told.at(-1)).toEqual({
       tabId: TAB,
-      message: { kind: 'start', debounceMs: 400 },
+      message: { kind: 'start' },
     });
     expect(await b.getState()).toMatchObject({
       status: 'live',
@@ -166,17 +165,15 @@ describe('starting', () => {
 });
 
 describe('sending lines', () => {
-  it('stamps the epoch, which every reset advances', async () => {
+  it('sends lines in one epoch for the whole broadcast', async () => {
     const b = await live();
-    await b.capture(TAB, { kind: 'reset', reason: 'load' });
     await b.capture(TAB, line(1, 'One.'));
-    await b.capture(TAB, { kind: 'reset', reason: 'clear' });
-    await b.capture(TAB, line(1, 'One again.'));
+    await b.capture(TAB, line(2, 'Two.'));
     await b.flush();
 
     expect(fake.written).toEqual([
-      { epoch: 1, seq: 1, text: 'One.' },
-      { epoch: 2, seq: 1, text: 'One again.' },
+      { epoch: 0, seq: 1, text: 'One.' },
+      { epoch: 0, seq: 2, text: 'Two.' },
     ]);
     expect(await b.getState()).toMatchObject({ sent: 2, queued: 0 });
   });
@@ -223,14 +220,13 @@ describe('sending lines', () => {
   it('loses nothing when the worker restarts with lines queued', async () => {
     const first = await live();
     fake.failNext(network);
-    await first.capture(TAB, { kind: 'reset', reason: 'load' });
     await first.capture(TAB, line(3, 'Queued before the restart.'));
     await first.flush();
 
     const second = worker(); // Chrome stopped the worker; a new one loads session storage
-    expect(await second.getState()).toMatchObject({ queued: 1, broadcast: { epoch: 1 } });
+    expect(await second.getState()).toMatchObject({ queued: 1, broadcast: { epoch: 0 } });
     await second.flush();
-    expect(fake.written).toEqual([{ epoch: 1, seq: 3, text: 'Queued before the restart.' }]);
+    expect(fake.written).toEqual([{ epoch: 0, seq: 3, text: 'Queued before the restart.' }]);
   });
 
   it('keeps only the newest text of a line that has not been sent yet', async () => {
@@ -270,10 +266,27 @@ describe('sending lines', () => {
 });
 
 describe('page and session lifecycle', () => {
-  it('tells only the broadcasting tab to resume after a reload', async () => {
+  it('tells only the broadcasting tab to resume after a reload, from the last line it has', async () => {
     const b = await live();
-    expect(await b.hello(TAB)).toEqual({ capture: true, debounceMs: 400 });
     expect(await b.hello(OTHER_TAB)).toEqual({ capture: false });
+    expect(await b.hello(TAB)).toEqual({ capture: true, resumeAfterSeq: null });
+
+    await b.capture(TAB, { kind: 'baseline', seq: 40 });
+    expect(await b.hello(TAB)).toEqual({ capture: true, resumeAfterSeq: 40 });
+
+    await b.capture(TAB, line(41, 'New.'));
+    expect(await b.hello(TAB)).toEqual({ capture: true, resumeAfterSeq: 41 });
+
+    await b.capture(TAB, line(41, 'A correction does not move it back.'));
+    await b.capture(TAB, { kind: 'baseline', seq: 3 });
+    expect(await b.hello(TAB)).toEqual({ capture: true, resumeAfterSeq: 41 });
+  });
+
+  it('remembers the last line across a worker restart', async () => {
+    const first = await live();
+    await first.capture(TAB, { kind: 'baseline', seq: 40 });
+    await first.capture(TAB, line(41, 'New.'));
+    expect(await worker().hello(TAB)).toEqual({ capture: true, resumeAfterSeq: 41 });
   });
 
   it('reports a missing column and a closed tab', async () => {
@@ -369,6 +382,7 @@ describe('read-aloud (docs/tts-plan.md §7)', () => {
         title: 'T',
         tabId: TAB,
         epoch: 0,
+        lastSeq: null,
         startedAt: 0,
       },
       status: 'live',

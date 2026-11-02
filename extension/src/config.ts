@@ -20,9 +20,8 @@ export interface Settings {
   supabaseUrl?: string;
   publishableKey?: string;
   viewerUrl?: string;
-  /** Extra Abestar URL match patterns, e.g. `https://go.abestar.com.tw/presentation/*`. */
+  /** Extra Abestar URL match patterns, e.g. `https://other.abestar.com.tw/listen/*`. */
   extraHosts?: string[];
-  debounceMs?: number;
   /** The popup's title field, remembered across broadcasts. */
   lastTitle?: string;
   /** The popup's read-aloud voice, remembered across broadcasts. */
@@ -35,8 +34,6 @@ export interface Settings {
 }
 
 export const DEFAULT_VOICE: Voice = 'female';
-
-export const DEFAULT_DEBOUNCE_MS = 400;
 
 export function effectiveConfig(settings: Settings): ExtensionConfig {
   return {

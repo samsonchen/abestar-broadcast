@@ -1,6 +1,6 @@
-// Options page: broadcast token, extra Abestar hosts, debounce, Supabase overrides.
+// Options page: broadcast token, extra Abestar hosts, Supabase overrides.
 
-import { buildConfig, DEFAULT_DEBOUNCE_MS, type Settings } from '../config';
+import { buildConfig, type Settings } from '../config';
 
 const input = (id: string) => document.getElementById(id) as HTMLInputElement;
 const extraHosts = document.getElementById('extra-hosts') as HTMLTextAreaElement;
@@ -10,7 +10,6 @@ async function load() {
   const s = (await chrome.storage.local.get()) as Settings;
   input('token').value = s.token ?? '';
   extraHosts.value = (s.extraHosts ?? []).join('\n');
-  input('debounce').value = String(s.debounceMs ?? DEFAULT_DEBOUNCE_MS);
   input('supabase-url').value = s.supabaseUrl ?? '';
   input('supabase-url').placeholder = buildConfig.supabaseUrl;
   input('publishable-key').value = s.publishableKey ?? '';
@@ -33,7 +32,6 @@ document.getElementById('form')?.addEventListener('submit', async (e) => {
   const settings: Settings = {
     token: input('token').value.trim(),
     extraHosts: hosts,
-    debounceMs: Number(input('debounce').value) || DEFAULT_DEBOUNCE_MS,
     supabaseUrl: input('supabase-url').value.trim(),
     publishableKey: input('publishable-key').value.trim(),
     viewerUrl: input('viewer-url').value.trim(),
