@@ -66,7 +66,7 @@ appears only after it.
 | Lines keep arriving while the page is scrolled back, so capture does not depend on scrolling.                                                                       |
 | The jump button has no test ID and its label is translated. Clicking it, or setting `scrollTop` to the bottom, returns to the bottom and the page then stays there. |
 
-**Hidden tab (GEF-5901, 2026-11-02):** in a truly hidden tab with Chrome's background throttling on, 21 lines over 2.5 minutes went from draft to corrected in 0.4–1.4 s at normal speech pace, and the feed stayed at the bottom (gap under 1 px). Page timers were throttled to as little as once a minute, so the 3 s and 10 s timers can run late there. The background-tab workaround from v1 is removed.
+**Hidden tab (GEF-5901, 2026-11-02):** in a truly hidden tab with Chrome's background throttling on, 92 lines over 11 minutes went from draft to corrected in 0.1–2.5 s, 56 of them after the first 5 minutes, and the feed stayed at the bottom. The longest gap between lines was 53 s, which is taken to be a pause in speech. Page timers were throttled to as little as once a minute, so the 3 s and 10 s timers can run late there. The background-tab workaround from v1 is removed.
 
 The evidence is otherwise one session, so D4 exists as a safety net.
 
